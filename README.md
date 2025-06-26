@@ -59,3 +59,62 @@ When reading the values in your Modbus client (e.g., IP-Symcon) from any of the 
 
 The script will print the simulated values to the console, which can be helpful for verification:
 `Update: U=230.1V, I=7.50A, P=1725W`
+
+## Network Configuration (Ubuntu with Netplan)
+
+For the script to bind to the configured `HOST_IPS`, these IP addresses must be assigned to a network interface on the machine running the script. Here's an example of how to configure this using `netplan` on an Ubuntu system.
+
+**Disclaimer:** The exact network interface name (e.g., `eth0`, `ens18`, `enp0s3`) will vary depending on your system. Use commands like `ip addr` or `ls /sys/class/net` to identify your interface name.
+
+1.  **Create or edit a Netplan configuration file.**
+    These files are typically located in `/etc/netplan/`. For example, you could create a file named `01-custom-ips.yaml`.
+
+2.  **Add the IP addresses to your interface.**
+    Below is an example configuration. **Replace `ens18` with your actual network interface name.** The example assumes your primary network configuration (e.g., DHCP or a static IP for the main address) is handled by another file (like `00-installer-config.yaml` or similar) or you can integrate this into your existing configuration.
+
+    ```yaml
+    # /etc/netplan/01-custom-ips.yaml
+    network:
+      version: 2
+      renderer: networkd
+      ethernets:
+        ens18: # <-- IMPORTANT: Replace with your actual interface name
+          # If your interface gets its main IP via DHCP, you might have:
+          # dhcp4: true
+          # If it has a primary static IP, that would be listed here too.
+          # Add the simulator IPs as additional addresses:
+          addresses:
+            # Add your primary static IP here if you have one and it's not managed elsewhere
+            # - 192.168.178.100/24
+            - 192.168.178.201/24
+            - 192.168.178.202/24
+            - 192.168.178.203/24
+            - 192.168.178.204/24
+            - 192.168.178.205/24
+            - 192.168.178.206/24
+            - 192.168.178.207/24
+            - 192.168.178.208/24
+            - 192.168.178.209/24
+            - 192.168.178.210/24
+            - 192.168.178.211/24
+            - 192.168.178.212/24
+          # Gateway and DNS settings are typically part of your primary IP configuration
+          # gateway4: 192.168.178.1
+          # nameservers:
+          #   addresses: [8.8.8.8, 1.1.1.1]
+    ```
+
+3.  **Apply the configuration:**
+    After saving the file, apply the changes with:
+    ```bash
+    sudo netplan apply
+    ```
+
+4.  **Verify the IP addresses:**
+    You can check if the IPs are assigned using:
+    ```bash
+    ip addr show dev ens18 # <-- Replace with your interface name
+    ```
+    You should see all the configured IP addresses listed for the interface.
+
+Once these IP addresses are active on your network interface, the Python script should be able to bind its Modbus server instances to them.
