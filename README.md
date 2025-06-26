@@ -1,21 +1,21 @@
 # PV Simulator with Modbus TCP
 
-This script simulates a photovoltaic (PV) system and makes its data available via a Modbus TCP server. It's primarily designed as a data source for home automation systems like Symcon or for testing Modbus client implementations.
+This script simulates multiple photovoltaic (PV) systems, each with its own Modbus TCP server instance. It's primarily designed as a data source for home automation systems like Symcon or for testing Modbus client implementations that need to interact with multiple devices.
 
 ## Purpose
 
-The main goal is to provide a simple way to generate realistic-looking PV system data (voltage, current, and power) that can be read by any Modbus TCP client. The simulation includes a daily cycle for current generation, mimicking the sun's rise and fall.
+The main goal is to provide a simple way to generate realistic-looking PV system data (voltage, current, and power) from multiple simulated sources. Each source runs as an independent Modbus TCP server on a unique IP address. The simulation includes a daily cycle for current generation, mimicking the sun's rise and fall, with slight variations for each instance.
 
 ## Configuration
 
 The script has several configuration options at the beginning of `main.py`:
 
-*   `HOST_IP`: (Default: `'192.168.178.13'`) The IP address the Modbus TCP server will listen on. Change this to `'0.0.0.0'` to listen on all available network interfaces.
-*   `TCP_PORT`: (Default: `5020`) The TCP port for the Modbus server. 502 is the standard Modbus TCP port.
-*   `UPDATE_INTERVAL_SECONDS`: (Default: `2`) How frequently the simulated PV values are updated, in seconds.
+*   `HOST_IPS`: (Default: `['192.168.178.201', ..., '192.168.178.212']`) A list of IP addresses on which the Modbus TCP server instances will listen. Each IP in this list will host a separate Modbus server.
+*   `TCP_PORT`: (Default: `5020`) The TCP port for all Modbus server instances. 5020 is used as port 502 (standard Modbus) might require root privileges.
+*   `UPDATE_INTERVAL_SECONDS`: (Default: `2`) How frequently the simulated PV values are updated for each instance, in seconds.
 *   `SCALING_FACTOR`: (Default: `10.0`) Modbus registers are 16-bit integers. To represent floating-point numbers like voltage and current, these values are multiplied by this factor before being sent. The client (e.g., Symcon) will need to divide the received values by this factor.
 
-## Modbus Registers
+## Modbus Registers (per instance)
 
 The simulator uses Modbus Holding Registers (read with Function Code 3). The register addresses are 0-indexed:
 
@@ -39,17 +39,19 @@ The simulator uses Modbus Holding Registers (read with Function Code 3). The reg
     ```bash
     python3 main.py
     ```
-    The server will start, and you'll see log messages indicating value updates.
+    The script will launch multiple Modbus TCP server instances, one for each IP address defined in `HOST_IPS`. You'll see log messages indicating value updates for each instance. Press Ctrl+C to shut down all servers.
 
-## Simulation Logic
+## Simulation Logic (per instance)
 
-*   **Voltage:** Simulated as a relatively stable AC voltage around 230V with minor random fluctuations.
-*   **Current:** Simulates a daily solar generation cycle using a sine wave. The current output gradually increases from 0A, peaks around 15A (simulating midday sun), and then decreases back to 0A (simulating night). This cycle is sped up for demonstration purposes.
+Each server instance simulates PV data with slight variations:
+
+*   **Voltage:** Simulated as a relatively stable AC voltage around 230V with minor random fluctuations, slightly varied per instance.
+*   **Current:** Simulates a daily solar generation cycle using a sine wave. The current output gradually increases from 0A, peaks (peak value slightly varied per instance, around 15A), and then decreases back to 0A. The phase of this daily cycle is also slightly offset for each instance to provide more diverse data.
 *   **Power:** Calculated simply as `Power = Voltage * Current`.
 
 ## Note for Symcon Users (and other clients)
 
-When reading the values in your Modbus client (e.g., IP-Symcon):
+When reading the values in your Modbus client (e.g., IP-Symcon) from any of the configured IP addresses:
 
 *   **Voltage:** The value read from `VOLTAGE_REGISTER` must be divided by `SCALING_FACTOR` (default 10.0) to get the actual voltage in Volts.
 *   **Current:** The value read from `CURRENT_REGISTER` must be divided by `SCALING_FACTOR` (default 10.0) to get the actual current in Amperes.
