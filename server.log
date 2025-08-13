@@ -1,0 +1,105 @@
+UI wird auf http://0.0.0.0:5001 gestartet...
+ * Serving Flask app 'main'
+ * Debug mode: on
+Exception in thread Thread-2 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.
+Exception in thread Thread-3 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-4 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-5 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-6 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-7 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-8 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-9 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-10 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
+Exception in thread Thread-11 (start_modbus_server_instance):
+Traceback (most recent call last):
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/home/jules/.pyenv/versions/3.12.11/lib/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/app/main.py", line 155, in start_modbus_server_instance
+    context = ModbusServerContext(slaves=store, single=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: ModbusServerContext.__init__() got an unexpected keyword argument 'slaves'
