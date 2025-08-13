@@ -1,5 +1,7 @@
 # PV Simulator with Modbus TCP
 
+**Alternative, specific guide for SolarBFE SoulPV3500:** [Anleitung.md](Anleitung.md)
+
 This script simulates multiple photovoltaic (PV) systems, each with its own Modbus TCP server instance. It's primarily designed as a data source for home automation systems like Symcon or for testing Modbus client implementations that need to interact with multiple devices.
 
 ## Purpose
