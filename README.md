@@ -49,16 +49,65 @@ Each server instance simulates PV data with slight variations:
 *   **Current:** Simulates a daily solar generation cycle using a sine wave. The current output gradually increases from 0A, peaks (peak value slightly varied per instance, around 15A), and then decreases back to 0A. The phase of this daily cycle is also slightly offset for each instance to provide more diverse data.
 *   **Power:** Calculated simply as `Power = Voltage * Current`.
 
-## Note for Symcon Users (and other clients)
+## Adding a Simulator to IP-Symcon (Step-by-Step Guide)
 
-When reading the values in your Modbus client (e.g., IP-Symcon) from any of the configured IP addresses:
+This guide explains how to add one of the simulated PV systems as a Modbus device in IP-Symcon.
 
-*   **Voltage:** The value read from `VOLTAGE_REGISTER` must be divided by `SCALING_FACTOR` (default 10.0) to get the actual voltage in Volts.
-*   **Current:** The value read from `CURRENT_REGISTER` must be divided by `SCALING_FACTOR` (default 10.0) to get the actual current in Amperes.
-*   **Power:** The value read from `POWER_REGISTER` is the direct power in Watts and does not need to be divided by `SCALING_FACTOR`.
+### Step 1: Create a Modbus Gateway
 
-The script will print the simulated values to the console, which can be helpful for verification:
-`Update: U=230.1V, I=7.50A, P=1725W`
+First, you need to establish the connection to the simulated device.
+
+1.  In the IP-Symcon Object Tree, click on the "+" icon to add a new instance.
+2.  Select **"Gateway"** and then search for and add a **"Modbus Gateway"**.
+3.  In the gateway's configuration window, set the **"Connection"** to **"Modbus TCP"**.
+4.  Enter the **IP Address** and **Port** for one of the simulated devices. For example:
+    *   **Host**: `192.168.178.201` (or another IP from `HOST_IPS`)
+    *   **Port**: `5020` (as defined in `TCP_PORT`)
+5.  Save the settings by clicking **"Apply"**. The gateway should now show a connection to the device.
+
+### Step 2: Create a Modbus Device
+
+Now, you can add a device that uses the gateway.
+
+1.  In the IP-Symcon Object Tree, click on the "+" icon again.
+2.  This time, select **"Device"** and then search for and add a **"Modbus Device"** (the one that supports multiple addresses).
+3.  In the device's configuration, make sure the parent instance (the gateway) is correctly selected.
+4.  Set the **"Device ID"**. For TCP connections, this is typically `1`.
+
+### Step 3: Add and Configure Addresses (Variables)
+
+In the configuration of the **Modbus Device**, you will find a list for **"Addresses"**. Here you will add an entry for each value you want to read (Voltage, Current, and Power).
+
+#### To add the **Voltage** variable:
+
+*   **Name**: `Voltage`
+*   **Unit**: `INT16` (Signed 16-bit Integer)
+*   **Function (Read)**: `Read Holding Registers (3)`
+*   **Address (Read)**: `0` (this is the `VOLTAGE_REGISTER`)
+*   **Factor**: `0.1` (This is crucial! It divides the received integer value by the `SCALING_FACTOR` of 10.0 to get the correct decimal value in Volts.)
+
+#### To add the **Current** variable:
+
+*   **Name**: `Current`
+*   **Unit**: `INT16` (Signed 16-bit Integer)
+*   **Function (Read)**: `Read Holding Registers (3)`
+*   **Address (Read)**: `1` (this is the `CURRENT_REGISTER`)
+*   **Factor**: `0.1` (This divides the received integer by the `SCALING_FACTOR` of 10.0 to get the correct value in Amperes.)
+
+#### To add the **Power** variable:
+
+*   **Name**: `Power`
+*   **Unit**: `INT16` (or `UINT16`)
+*   **Function (Read)**: `Read Holding Registers (3)`
+*   **Address (Read)**: `2` (this is the `POWER_REGISTER`)
+*   **Factor**: `1` (The power value is not scaled, so the factor is 1.)
+
+### Step 4: Finalize
+
+1.  Make sure to check the **"Active"** box for each address you want to create as a variable in the Object Tree.
+2.  Click **"Apply"** to save all settings.
+
+IP-Symcon will now cyclically poll the values from the simulator, and you should see the `Voltage`, `Current`, and `Power` variables with their simulated values in the Object Tree under your Modbus Device.
 
 ## Network Configuration (Ubuntu with Netplan)
 
