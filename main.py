@@ -17,7 +17,8 @@ data_lock = threading.Lock()
 
 # --- Konfiguration ---
 # List of IP addresses for the Modbus servers
-HOST_IPS = [f"192.168.178.{201 + i}" for i in range(12)]
+# HOST_IPS = [f"192.168.{51 + i}.100" for i in range(12)]
+HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
 TCP_PORT = 5020      # Standard Modbus TCP Port (using 5020 as 502 might require root)
 UPDATE_INTERVAL_SECONDS = 2  # Wie oft die Werte aktualisiert werden (in Sekunden)
 
@@ -77,9 +78,9 @@ def simulate_pv_values(context, instance_id, host_ip):
 
             # Werte in die Register schreiben
             # context[0] refers to the slave context for this server instance
-            context[0].setValues(3, VOLTAGE_REGISTER, [scaled_voltage])
-            context[0].setValues(3, CURRENT_REGISTER, [scaled_current])
-            context[0].setValues(3, POWER_REGISTER, [scaled_power])
+            context[1].hr.setValues(VOLTAGE_REGISTER, [scaled_voltage])
+            context[1].hr.setValues(CURRENT_REGISTER, [scaled_current])
+            context[1].hr.setValues(POWER_REGISTER, [scaled_power])
 
             # Update shared data for UI
             with data_lock:
@@ -113,7 +114,7 @@ from flask import Flask, render_template, jsonify
 # --- Web UI (Flask) ---
 app = Flask(__name__)
 UI_HOST = "0.0.0.0" # Listen on all interfaces for the UI
-UI_PORT = 5001
+UI_PORT = 5010
 
 @app.route('/')
 def index():
@@ -152,7 +153,8 @@ def start_modbus_server_instance(host_ip, instance_id):
     store = ModbusDeviceContext(
         hr=ModbusSequentialDataBlock(0, [0] * 100) # Holding Registers
     )
-    context = ModbusServerContext(slaves=store, single=True)
+    # context = ModbusServerContext(slaves=store, single=True) # Old version
+    context = ModbusServerContext({1: store}, single=True)
 
     # Starte den Simulations-Thread im Hintergrund für diese Instanz
     update_thread = threading.Thread(target=simulate_pv_values, args=(context, instance_id, host_ip))
