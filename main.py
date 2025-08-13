@@ -7,7 +7,13 @@ import math
 import random
 from pymodbus.server import StartTcpServer
 from pymodbus.datastore import ModbusSequentialDataBlock
-from pymodbus.datastore import ModbusSlaveContext, ModbusServerContext
+from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext
+
+# --- Globale Daten und Sperren ---
+# Thread-sichere Datenablage für den UI-Status
+server_data = {}
+data_lock = threading.Lock()
+
 
 # --- Konfiguration ---
 # List of IP addresses for the Modbus servers
@@ -26,7 +32,7 @@ POWER_REGISTER = 2     # Leistung (P)
 # Symcon muss den empfangenen Wert durch diesen Faktor teilen.
 SCALING_FACTOR = 10.0
 
-def simulate_pv_values(context, instance_id):
+def simulate_pv_values(context, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und aktualisiert
     kontinuierlich die Werte im Modbus Datastore für eine bestimmte Instanz.
@@ -69,13 +75,22 @@ def simulate_pv_values(context, instance_id):
             scaled_current = int(current * SCALING_FACTOR)
             scaled_power = int(power) # Leistung oft als ganzer Watt-Wert
 
-            print(f"Instanz {instance_id}: Update: U={voltage:.1f}V, I={current:.2f}A, P={power:.0f}W")
-
             # Werte in die Register schreiben
             # context[0] refers to the slave context for this server instance
             context[0].setValues(3, VOLTAGE_REGISTER, [scaled_voltage])
             context[0].setValues(3, CURRENT_REGISTER, [scaled_current])
             context[0].setValues(3, POWER_REGISTER, [scaled_power])
+
+            # Update shared data for UI
+            with data_lock:
+                server_data[instance_id] = {
+                    "host_ip": host_ip,
+                    "status": "Running",
+                    "client_ip": "N/A",
+                    "voltage": f"{voltage:.1f}",
+                    "current": f"{current:.2f}",
+                    "power": f"{power:.0f}"
+                }
             
             # Zähler für den Tageszyklus erhöhen
             day_cycle_counter = (day_cycle_counter + 1) % 360
@@ -84,22 +99,63 @@ def simulate_pv_values(context, instance_id):
             
         except Exception as e:
             print(f"Fehler im Update-Thread für Instanz {instance_id}: {e}")
+            with data_lock:
+                server_data[instance_id] = {
+                    "host_ip": host_ip,
+                    "status": f"Error: {e}",
+                    "client_ip": "N/A",
+                    "voltage": "0", "current": "0", "power": "0"
+                }
             time.sleep(10)
+
+from flask import Flask, render_template, jsonify
+
+# --- Web UI (Flask) ---
+app = Flask(__name__)
+UI_HOST = "0.0.0.0" # Listen on all interfaces for the UI
+UI_PORT = 5001
+
+@app.route('/')
+def index():
+    """Zeigt das Haupt-Dashboard an."""
+    return render_template('index.html')
+
+@app.route('/data')
+def data():
+    """Liefert die Server-Daten als JSON."""
+    with data_lock:
+        # Sort data by instance_id
+        sorted_data = sorted(server_data.items())
+    return jsonify(sorted_data)
+
+def run_flask_app():
+    """Startet die Flask-Webanwendung."""
+    print(f"UI wird auf http://{UI_HOST}:{UI_PORT} gestartet...")
+    # 'use_reloader=False' is important to prevent Flask from starting twice in debug mode
+    app.run(host=UI_HOST, port=UI_PORT, debug=True, use_reloader=False)
+
 
 def start_modbus_server_instance(host_ip, instance_id):
     """
     Initialisiert und startet eine einzelne Modbus TCP Server Instanz.
     """
+    # Initialize shared data for this instance
+    with data_lock:
+        server_data[instance_id] = {
+            "host_ip": host_ip, "status": "Initializing", "client_ip": "N/A",
+            "voltage": "0", "current": "0", "power": "0"
+        }
+
     print(f"Initialisiere Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
     # Initialisiere die Registerblöcke. Wir nutzen nur Holding Registers.
     # Wir erstellen 100 Register, initialisiert mit 0.
-    store = ModbusSlaveContext(
+    store = ModbusDeviceContext(
         hr=ModbusSequentialDataBlock(0, [0] * 100) # Holding Registers
     )
     context = ModbusServerContext(slaves=store, single=True)
 
     # Starte den Simulations-Thread im Hintergrund für diese Instanz
-    update_thread = threading.Thread(target=simulate_pv_values, args=(context, instance_id))
+    update_thread = threading.Thread(target=simulate_pv_values, args=(context, instance_id, host_ip))
     update_thread.daemon = True # Beendet den Thread, wenn das Hauptprogramm endet
     update_thread.start()
 
@@ -110,8 +166,13 @@ def start_modbus_server_instance(host_ip, instance_id):
 
 def main():
     """
-    Hauptfunktion: Initialisiert und startet mehrere Modbus Server Instanzen.
+    Hauptfunktion: Initialisiert und startet mehrere Modbus Server Instanzen und das Web-UI.
     """
+    # Start UI thread
+    ui_thread = threading.Thread(target=run_flask_app)
+    ui_thread.daemon = True
+    ui_thread.start()
+
     server_threads = []
     for i, host_ip in enumerate(HOST_IPS):
         # Start each server in its own thread because StartTcpServer is blocking
