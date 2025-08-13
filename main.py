@@ -24,16 +24,16 @@ UPDATE_INTERVAL_SECONDS = 2  # Wie oft die Werte aktualisiert werden (in Sekunde
 
 # Register-Adressen (beginnend bei 0)
 # Wir verwenden Holding Registers (Funktionscode 3)
-VOLTAGE_REGISTER = 0   # Spannung (U)
-CURRENT_REGISTER = 1   # Strom (I)
-POWER_REGISTER = 2     # Leistung (P)
+VOLTAGE_REGISTER = 1   # Spannung (U)
+CURRENT_REGISTER = 2   # Strom (I)
+POWER_REGISTER = 3     # Leistung (P)
 
 # Skalierungsfaktor: Modbus Register sind 16-Bit Integer.
 # Um Fließkommazahlen zu senden, multiplizieren wir sie mit einem Faktor.
 # Symcon muss den empfangenen Wert durch diesen Faktor teilen.
 SCALING_FACTOR = 10.0
 
-def simulate_pv_values(slave_context, instance_id, host_ip):
+def simulate_pv_values(datablock, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und aktualisiert
     kontinuierlich die Werte im Modbus Datastore für eine bestimmte Instanz.
@@ -41,43 +41,26 @@ def simulate_pv_values(slave_context, instance_id, host_ip):
     print(f"Starte Simulation der PV-Werte für Instanz {instance_id}...")
     
     # Ein Zähler, um einen Tagesverlauf zu simulieren
-    # Add instance_id to day_cycle_counter to vary the simulation slightly per instance
     day_cycle_counter = instance_id * 30 # Offset based on instance_id for variety
 
     while True:
         try:
-            # 1. Spannung (U) simulieren
-            # Eine stabile Netzspannung mit leichten Schwankungen.
-            # Add small variation based on instance_id
+            # ... (Rest der Funktion bleibt unverändert)
             voltage = 230.0 + (random.random() - 0.5) + (instance_id % 5 - 2) * 0.1
-            
-            # 2. Strom (I) simulieren
-            # Simuliert einen Sinus-Verlauf über den Tag (Sonne geht auf und unter)
-            # Der Wert schwankt zwischen 0 und ca. 15A
-            # Der Zyklus wird hier beschleunigt, um die Änderungen schnell zu sehen
             sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
-            # Vary max current slightly per instance
             max_current = 15.0 + (instance_id % 3 - 1)
-            current = sine_wave * max_current + (random.random() * 0.1) # Max current + leichtes Rauschen
-            if current < 0.1: # Nachts kein Strom
+            current = sine_wave * max_current + (random.random() * 0.1)
+            if current < 0.1:
                 current = 0.0
-
-            # 3. Leistung (P) berechnen
-            # P = U * I
             power = voltage * current
-
-            # Skalierte Werte vorbereiten
             scaled_voltage = int(voltage * SCALING_FACTOR)
             scaled_current = int(current * SCALING_FACTOR)
-            scaled_power = int(power) # Leistung oft als ganzer Watt-Wert
+            scaled_power = int(power)
 
-            # Werte in die Register schreiben
-            # Der Funktionscode '3' wird hier entfernt
-            slave_context.setValues(VOLTAGE_REGISTER, [scaled_voltage])
-            slave_context.setValues(CURRENT_REGISTER, [scaled_current])
-            slave_context.setValues(POWER_REGISTER, [scaled_power])
+            datablock.setValues(VOLTAGE_REGISTER, [scaled_voltage])
+            datablock.setValues(CURRENT_REGISTER, [scaled_current])
+            datablock.setValues(POWER_REGISTER, [scaled_power])
 
-            # Update shared data for UI
             with data_lock:
                 server_data[instance_id] = {
                     "host_ip": host_ip,
@@ -88,9 +71,7 @@ def simulate_pv_values(slave_context, instance_id, host_ip):
                     "power": f"{power:.0f}"
                 }
             
-            # Zähler für den Tageszyklus erhöhen
             day_cycle_counter = (day_cycle_counter + 1) % 360
-
             time.sleep(UPDATE_INTERVAL_SECONDS)
             
         except Exception as e:
@@ -135,7 +116,6 @@ def start_modbus_server_instance(host_ip, instance_id):
     """
     Initialisiert und startet eine einzelne Modbus TCP Server Instanz.
     """
-    # Initialize shared data for this instance
     with data_lock:
         server_data[instance_id] = {
             "host_ip": host_ip, "status": "Initializing", "client_ip": "N/A",
@@ -143,20 +123,25 @@ def start_modbus_server_instance(host_ip, instance_id):
         }
 
     print(f"Initialisiere Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
-    # Initialisiere die Registerblöcke. Wir nutzen nur Holding Registers.
-    # Wir erstellen 100 Register, initialisiert mit 0.
-    store = ModbusSequentialDataBlock(0, [0] * 100) # Holding Registers
     
-    # Der Server-Kontext, der den Slave unter ID 1 verwaltet
-    context = ModbusServerContext({1: store}, single=True)
+    # 1. Erstelle den Datenblock (den Speicher)
+    datablock = ModbusSequentialDataBlock(0, [0] * 100)
 
-    # Starte den Simulations-Thread im Hintergrund für diese Instanz
-    # Wir übergeben jetzt direkt den 'store' an den Thread
-    update_thread = threading.Thread(target=simulate_pv_values, args=(store, instance_id, host_ip))
-    update_thread.daemon = True # Beendet den Thread, wenn das Hauptprogramm endet
+    # 2. Erstelle den Geräte-Kontext für den Slave
+    device_context = ModbusDeviceContext(hr=datablock)
+
+    # 3. Definiere den Kontext als einfaches Dictionary.
+    #    Der Server kann die Geräte-ID (1) nachschlagen und findet dann den device_context.
+    context = {
+        1: device_context
+    }
+
+    # 4. Starte den Simulations-Thread und übergib ihm direkt den Datenblock
+    update_thread = threading.Thread(target=simulate_pv_values, args=(datablock, instance_id, host_ip))
+    update_thread.daemon = True
     update_thread.start()
 
-    # Starte den Modbus TCP Server für diese Instanz
+    # 5. Starte den Modbus-Server. Das 'single=True' Argument wird entfernt.
     print(f"Modbus TCP Slave für Instanz {instance_id} wird auf {host_ip}:{TCP_PORT} gestartet...")
     StartTcpServer(context=context, address=(host_ip, TCP_PORT))
 
