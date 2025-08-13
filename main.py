@@ -33,7 +33,7 @@ POWER_REGISTER = 2     # Leistung (P)
 # Symcon muss den empfangenen Wert durch diesen Faktor teilen.
 SCALING_FACTOR = 10.0
 
-def simulate_pv_values(context, instance_id, host_ip):
+def simulate_pv_values(slave_context, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und aktualisiert
     kontinuierlich die Werte im Modbus Datastore für eine bestimmte Instanz.
@@ -66,21 +66,16 @@ def simulate_pv_values(context, instance_id, host_ip):
             # P = U * I
             power = voltage * current
 
-            # In Modbus-Register schreiben (skalierte Integer-Werte)
-            # context[0] ist die Referenz auf unseren Slave (unit=1)
-            # setValues(Funktionscode, Start-Adresse, [Werte])
-            # Funktionscode 3 = Holding Register
-            
             # Skalierte Werte vorbereiten
             scaled_voltage = int(voltage * SCALING_FACTOR)
             scaled_current = int(current * SCALING_FACTOR)
             scaled_power = int(power) # Leistung oft als ganzer Watt-Wert
 
             # Werte in die Register schreiben
-            # context[0] refers to the slave context for this server instance
-            context[1].hr.setValues(VOLTAGE_REGISTER, [scaled_voltage])
-            context[1].hr.setValues(CURRENT_REGISTER, [scaled_current])
-            context[1].hr.setValues(POWER_REGISTER, [scaled_power])
+            # Der Funktionscode '3' wird hier entfernt
+            slave_context.setValues(VOLTAGE_REGISTER, [scaled_voltage])
+            slave_context.setValues(CURRENT_REGISTER, [scaled_current])
+            slave_context.setValues(POWER_REGISTER, [scaled_power])
 
             # Update shared data for UI
             with data_lock:
@@ -150,14 +145,14 @@ def start_modbus_server_instance(host_ip, instance_id):
     print(f"Initialisiere Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
     # Initialisiere die Registerblöcke. Wir nutzen nur Holding Registers.
     # Wir erstellen 100 Register, initialisiert mit 0.
-    store = ModbusDeviceContext(
-        hr=ModbusSequentialDataBlock(0, [0] * 100) # Holding Registers
-    )
-    # context = ModbusServerContext(slaves=store, single=True) # Old version
+    store = ModbusSequentialDataBlock(0, [0] * 100) # Holding Registers
+    
+    # Der Server-Kontext, der den Slave unter ID 1 verwaltet
     context = ModbusServerContext({1: store}, single=True)
 
     # Starte den Simulations-Thread im Hintergrund für diese Instanz
-    update_thread = threading.Thread(target=simulate_pv_values, args=(context, instance_id, host_ip))
+    # Wir übergeben jetzt direkt den 'store' an den Thread
+    update_thread = threading.Thread(target=simulate_pv_values, args=(store, instance_id, host_ip))
     update_thread.daemon = True # Beendet den Thread, wenn das Hauptprogramm endet
     update_thread.start()
 
