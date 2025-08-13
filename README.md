@@ -19,18 +19,30 @@ Key options at the top of `main.py`:
 *   `TCP_PORT`: (Default: `5020`) The TCP port for all Modbus server instances.
 *   `UI_HOST`: (Default: `0.0.0.0`) The host address for the web monitoring UI.
 *   `UI_PORT`: (Default: `5010`) The port for the web monitoring UI.
-*   `SCALING_FACTOR`: (Default: `10.0`) A multiplier for voltage and current values to allow for decimals over Modbus.
 
 ## Modbus Registers (per instance)
 
-The simulator uses Modbus Holding Registers (read with Function Code 3). The register addresses are 1-indexed:
+The simulator provides a comprehensive set of registers for a detailed PV inverter simulation. It uses Modbus Holding Registers (read with Function Code 3), and all addresses are 1-indexed.
 
-*   **Register 1 (`VOLTAGE_REGISTER`):** Simulated AC voltage (U).
-    *   Value is scaled by `SCALING_FACTOR`.
-*   **Register 2 (`CURRENT_REGISTER`):** Simulated AC current (I).
-    *   Value is scaled by `SCALING_FACTOR`.
-*   **Register 3 (`POWER_REGISTER`):** Calculated AC power (P = U * I).
-    *   Value is sent as a whole number (Watts), not scaled.
+| Address | Name | Data Type | Client Factor | Unit | Description |
+|---|---|---|---|---|---|
+| 1 | AC Voltage | `INT16` | `0.1` | V | AC Line-to-Neutral Voltage |
+| 2 | AC Current | `INT16` | `0.01` | A | AC Output Current |
+| 3 | Apparent Power | `INT16` | `1` | VA | Apparent Power (S = U * I) |
+| 4 | Active Power | `INT16` | `1` | W | Real Power (P) |
+| 5 | Power Factor | `INT16` | `0.01` | - | Power Factor (cos φ) |
+| 6 | Reactive Power | `INT16` | `1` | VAR | Reactive Power (Q) |
+| 7 | Frequency | `INT16` | `0.01` | Hz | Grid Frequency |
+| 8-9 | Daily Yield | `UINT32` | `1` | Wh | Accumulated energy for the day |
+| 10-11 | Total Yield | `UINT32` | `1` | kWh | Total accumulated energy |
+| 12 | Operating State | `INT16` | `1` | - | `1`:Standby, `2`:Feeding, `3`:Fault |
+| 13 | Device Temperature | `INT16` | `0.1` | °C | Internal inverter temperature |
+| 14 | Fault Code | `INT16` | `1` | - | Active fault code (0 = OK) |
+| 15 | DC Voltage | `INT16` | `0.1` | V | DC Input Voltage |
+| 16 | DC Current | `INT16` | `0.01` | A | DC Input Current |
+| 17 | DC Power | `INT16` | `1` | W | DC Input Power (P_DC) |
+
+**Note on 32-bit Registers:** `Daily Yield` and `Total Yield` are 32-bit unsigned integers (`UINT32`) that span two 16-bit Modbus registers. When reading, you must query both registers (e.g., starting at address 8 for a length of 2). The server stores values in **High Word First** order.
 
 ## Running the Simulator
 
@@ -102,51 +114,8 @@ Once running, you can view the status of all simulators via the web dashboard.
 *   **URL**: `http://<your-server-ip>:5010`
 *   Example: `http://10.10.10.115:5010`
 
-The dashboard shows each inverter's IP, status, and real-time voltage, current, and power data.
+The dashboard shows each inverter's IP, status, and real-time data for key metrics like AC power, daily yield, and DC power.
 
-## Adding a Simulator to IP-Symcon (Example)
+## Connecting a Modbus Client (e.g., IP-Symcon)
 
-This guide explains how to add one of the simulated inverters to IP-Symcon.
-
-### Step 1: Create Modbus Gateway
-
-1.  In the IP-Symcon Object Tree, add a **Modbus Gateway**.
-2.  Set the **Connection** to **Modbus TCP**.
-3.  Enter the IP and Port for one of the simulated devices.
-    *   **Host**: `10.10.10.120` (or another IP from the `HOST_IPS` list)
-    *   **Port**: `5020`
-4.  Apply the settings.
-
-### Step 2: Create Modbus Device
-
-1.  Add a **Modbus Device** and select the gateway you just created as its parent.
-2.  Set the **Device ID** to `1`.
-
-### Step 3: Configure Addresses (Variables)
-
-In the device's **Addresses** list, add an entry for each value you want to read.
-
-*   **Voltage**
-    *   **Address**: `1` (`VOLTAGE_REGISTER`)
-    *   **Function**: `Read Holding Registers (3)`
-    *   **Data Type**: `INT16`
-    *   **Factor**: `0.1` (to divide by the `SCALING_FACTOR` of 10.0)
-
-*   **Current**
-    *   **Address**: `2` (`CURRENT_REGISTER`)
-    *   **Function**: `Read Holding Registers (3)`
-    *   **Data Type**: `INT16`
-    *   **Factor**: `0.1`
-
-*   **Power**
-    *   **Address**: `3` (`POWER_REGISTER`)
-    *   **Function**: `Read Holding Registers (3)`
-    *   **Data Type**: `INT16`
-    *   **Factor**: `1` (no scaling)
-
-### Step 4: Finalize
-
-1.  Check the **Active** box for each address to create the variables.
-2.  Click **Apply**.
-
-The live data from the simulator should now appear in your IP-Symcon Object Tree.
+For detailed instructions on how to connect a Modbus client and configure it to read the available registers, please refer to the user manual: **[Anleitung.md](Anleitung.md)**.
