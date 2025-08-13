@@ -60,30 +60,114 @@ Hier wird die Anbindung eines der 12 simulierten Wechselrichter beschrieben.
 
 #### C. Register zur Datenabfrage definieren
 
-Öffnen Sie die Konfiguration des Modbus-Geräts und fügen Sie unter **Adressen** die folgenden Einträge hinzu:
+Öffnen Sie die Konfiguration des Modbus-Geräts und fügen Sie unter **Adressen** die folgenden Einträge hinzu. Die Adressen sind die Register-Nummern aus der Simulation.
 
-* **Spannung (Voltage)**
-    * **Name:** `Spannung`
-    * **Datentyp:** `INT16`
-    * **Funktion (Lesen):** `Read Holding Registers (3)`
-    * **Adresse (Lesen):** `1`
-    * **Faktor:** `0.1` (Teilt den gelesenen Wert durch 10.0)
-* **Strom (Current)**
-    * **Name:** `Strom`
-    * **Datentyp:** `INT16`
-    * **Funktion (Lesen):** `Read Holding Registers (3)`
-    * **Adresse (Lesen):** `2`
-    * **Faktor:** `0.1` (Teilt den gelesenen Wert durch 10.0)
-* **Leistung (Power)**
-    * **Name:** `Leistung`
-    * **Datentyp:** `INT16`
-    * **Funktion (Lesen):** `Read Holding Registers (3)`
-    * **Adresse (Lesen):** `3`
-    * **Faktor:** `1` (Keine Skalierung)
+**Wichtig:** 32-Bit-Werte wie die Energiezähler belegen zwei 16-Bit-Register. In IP-Symcon können Sie hierfür den Datentyp `UINT32` oder `INT32` mit der Option `High Word First` (oder ähnlich) verwenden, um die beiden Register automatisch zu einem Wert zusammenzufassen.
+
+---
+
+**AC-Hauptwerte**
+
+*   **Spannung (AC)**
+    *   Name: `AC Spannung`
+    *   Adresse: `1`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.1`
+*   **Strom (AC)**
+    *   Name: `AC Strom`
+    *   Adresse: `2`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.01`
+*   **Scheinleistung**
+    *   Name: `Scheinleistung`
+    *   Adresse: `3`
+    *   Datentyp: `INT16`
+    *   Faktor: `1`
+*   **Wirkleistung**
+    *   Name: `Wirkleistung`
+    *   Adresse: `4`
+    *   Datentyp: `INT16`
+    *   Faktor: `1`
+*   **Leistungsfaktor**
+    *   Name: `Leistungsfaktor`
+    *   Adresse: `5`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.01`
+*   **Blindleistung**
+    *   Name: `Blindleistung`
+    *   Adresse: `6`
+    *   Datentyp: `INT16`
+    *   Faktor: `1`
+
+---
+
+**Netzparameter**
+
+*   **Netzfrequenz**
+    *   Name: `Netzfrequenz`
+    *   Adresse: `7`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.01`
+
+---
+
+**Energiezähler (32-Bit)**
+
+*   **Tagesertrag (Wh)**
+    *   Name: `Tagesertrag`
+    *   Adresse: `8`
+    *   Datentyp: `UINT32 (High Word First)`
+    *   Faktor: `1`
+*   **Gesamtertrag (kWh)**
+    *   Name: `Gesamtertrag`
+    *   Adresse: `10`
+    *   Datentyp: `UINT32 (High Word First)`
+    *   Faktor: `1`
+
+---
+
+**Status und Diagnose**
+
+*   **Betriebszustand**
+    *   Name: `Betriebszustand`
+    *   Adresse: `12`
+    *   Datentyp: `INT16`
+    *   (Werte: 1=Standby, 2=Einspeisung, 3=Fehler)
+*   **Gerätetemperatur**
+    *   Name: `Gerätetemperatur`
+    *   Adresse: `13`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.1`
+*   **Fehlercode**
+    *   Name: `Fehlercode`
+    *   Adresse: `14`
+    *   Datentyp: `INT16`
+
+---
+
+**DC-Seite (Gleichstrom)**
+
+*   **DC Spannung**
+    *   Name: `DC Spannung`
+    *   Adresse: `15`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.1`
+*   **DC Strom**
+    *   Name: `DC Strom`
+    *   Adresse: `16`
+    *   Datentyp: `INT16`
+    *   Faktor: `0.01`
+*   **DC Leistung**
+    *   Name: `DC Leistung`
+    *   Adresse: `17`
+    *   Datentyp: `INT16`
+    *   Faktor: `1`
+
+---
 
 #### D. Abschluss der Konfiguration
 
-1.  Aktivieren Sie die Checkbox **Aktiv** für jeden Eintrag, damit eine Variable in IP-Symcon erstellt wird.
+1.  Aktivieren Sie für jeden Eintrag die Checkbox **Aktiv**, damit eine Variable in IP-Symcon erstellt wird.
 2.  Klicken Sie auf **Übernehmen**.
 
-Sie sollten nun die Live-Werte für Spannung, Strom und Leistung im Objektbaum von IP-Symcon sehen können.
+Sie sollten nun die Live-Werte für alle konfigurierten Register im Objektbaum von IP-Symcon sehen können.
