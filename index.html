@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modbus PV Simulator Status</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+            background-color: #ffffff;
+            font-size: 0.9em;
+        }
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #dddddd;
+            white-space: nowrap;
+        }
+        thead th {
+            background-color: #4a6fa5;
+            color: #ffffff;
+            font-weight: bold;
+        }
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tbody tr:hover {
+            background-color: #f1f1f1;
+        }
+        .status-running {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .status-fault, .status-error {
+            color: #c0392b;
+            font-weight: bold;
+        }
+        .status-initializing, .status-standby {
+            color: #f39c12;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Modbus PV Simulator Status</h1>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Host IP</th>
+                <th>Status</th>
+                <th>Temp (°C)</th>
+                <th>AC Spannung (V)</th>
+                <th>AC Strom (A)</th>
+                <th>Wirkleistung (W)</th>
+                <th>Leistungsfaktor</th>
+                <th>Frequenz (Hz)</th>
+                <th>Tagesertrag (kWh)</th>
+                <th>DC Leistung (W)</th>
+                <th>Fehlercode</th>
+            </tr>
+        </thead>
+        <tbody id="server-status-body">
+            <!-- Daten werden hier per JavaScript eingefügt -->
+        </tbody>
+    </table>
+
+    <script>
+        function updateStatus() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.getElementById('server-status-body');
+                    tbody.innerHTML = ''; // Clear existing table data
+
+                    data.forEach(([instanceId, server]) => {
+                        const row = document.createElement('tr');
+
+                        // Standardwerte für den Fall, dass der Server initialisiert wird
+                        const defaults = {
+                            status: "Initializing",
+                            temp: "N/A",
+                            ac_voltage: "N/A",
+                            ac_current: "N/A",
+                            active_power: "N/A",
+                            power_factor: "N/A",
+                            frequency: "N/A",
+                            daily_yield: "N/A",
+                            dc_power: "N/A",
+                            fault_code: "N/A",
+                            op_state: 0
+                        };
+                        
+                        // Überschreibe Standardwerte mit echten Daten, falls vorhanden
+                        const displayData = { ...defaults, ...server };
+
+                        let statusText = displayData.status;
+                        let statusClass = 'status-initializing';
+
+                        if (displayData.status === 'Running') {
+                            if (displayData.op_state === 2) {
+                                statusText = 'Einspeisung';
+                                statusClass = 'status-running';
+                            } else if (displayData.op_state === 1) {
+                                statusText = 'Standby';
+                                statusClass = 'status-standby';
+                            }
+                        } else if (displayData.status.startsWith('Fault')) {
+                            statusText = 'Fehler';
+                            statusClass = 'status-fault';
+                        } else if (displayData.status.startsWith('Error')) {
+                            statusText = 'Verbindungsfehler';
+                            statusClass = 'status-error';
+                        }
+
+
+                        row.innerHTML = `
+                            <td>${instanceId}</td>
+                            <td>${displayData.host_ip}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                            <td>${displayData.temp}</td>
+                            <td>${displayData.ac_voltage}</td>
+                            <td>${displayData.ac_current}</td>
+                            <td>${displayData.active_power}</td>
+                            <td>${displayData.power_factor}</td>
+                            <td>${displayData.frequency}</td>
+                            <td>${displayData.daily_yield}</td>
+                            <td>${displayData.dc_power}</td>
+                            <td>${displayData.fault_code}</td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                })
+                .catch(error => {
+                    console.error('Fehler beim Abrufen der Daten:', error);
+                    const tbody = document.getElementById('server-status-body');
+                    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; color: red;">Fehler beim Laden der Daten. Läuft der Server?</td></tr>';
+                });
+        }
+
+        // Update alle 2 Sekunden (passend zum Server-Intervall)
+        setInterval(updateStatus, 2000);
+
+        // Initialer Ladevorgang
+        document.addEventListener('DOMContentLoaded', updateStatus);
+    </script>
+
+</body>
+</html>
