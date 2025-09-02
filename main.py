@@ -212,7 +212,17 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
         try:
             # 1. Steuerbefehle aus der UI verarbeiten
             control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
-            if control_action == 'start_charging' and state != 3:
+
+            if control_action == 'set_soc' and state == 1: # Nur im Zustand "Bereit"
+                try:
+                    new_soc = int(wallbox_controls.get(instance_id, {}).pop('value', soc))
+                    if 0 <= new_soc <= 100:
+                        soc = new_soc
+                        print(f"[Wallbox {instance_id}] SoC auf {soc}% gesetzt.")
+                except (ValueError, TypeError):
+                    pass # Ungültige Werte ignorieren
+
+            elif control_action == 'start_charging' and state != 3:
                 state = 2
                 if soc < 20:
                     soc = 20
@@ -327,6 +337,24 @@ def inject_wallbox_fault(instance_id):
     if instance_id in wallbox_controls:
         wallbox_controls[instance_id]['action'] = 'inject_fault'
         return jsonify({"status": "success", "message": f"Fault injection command sent to wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
+
+@app.route('/set_soc/<int:instance_id>', methods=['POST'])
+def set_soc(instance_id):
+    data = request.get_json()
+    if not data or 'soc' not in data:
+        return jsonify({"status": "error", "message": "Missing 'soc' parameter"}), 400
+    try:
+        soc_value = int(data['soc'])
+        if not (0 <= soc_value <= 100):
+             return jsonify({"status": "error", "message": "SoC value out of range (0-100)"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"status": "error", "message": "Invalid SoC value"}), 400
+
+    if instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'set_soc'
+        wallbox_controls[instance_id]['value'] = soc_value
+        return jsonify({"status": "success", "message": f"Set SoC command sent to wallbox {instance_id}"})
     return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
 
 @app.route('/inject_fault/<int:instance_id>', methods=['POST'])

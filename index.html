@@ -118,6 +118,7 @@
                 <th>Geladene Energie (kWh)</th>
                 <th>Fehlercode</th>
                 <th>Aktion</th>
+                <th>SoC setzen</th>
             </tr>
         </thead>
         <tbody id="wallbox-status-body">
@@ -170,6 +171,7 @@
                         const chargeButtonText = displayData.state === 2 ? 'Laden stoppen' : 'Laden starten';
                         const chargeButtonFunc = `toggleCharging(${instanceId}, ${displayData.state})`;
                         const chargeButtonDisabled = displayData.state === 3 ? 'disabled' : '';
+                        const socInputDisabled = displayData.state !== 1 ? 'disabled' : '';
 
                         row.innerHTML = `
                             <td>${instanceId}</td>
@@ -183,6 +185,10 @@
                                 <button onclick="${chargeButtonFunc}" ${chargeButtonDisabled}>${chargeButtonText}</button>
                                 <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
                             </td>
+                            <td>
+                                <input type="number" id="soc-input-${instanceId}" min="0" max="100" style="width: 60px;" value="${Math.round(parseFloat(displayData.soc))}" ${socInputDisabled}>
+                                <button onclick="setSoC(${instanceId})" ${socInputDisabled}>Setzen</button>
+                            </td>
                         `;
                         wallboxBody.appendChild(row);
                     });
@@ -192,7 +198,7 @@
                     const pvBody = document.getElementById('server-status-body');
                     pvBody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten.</td></tr>';
                     const wallboxBody = document.getElementById('wallbox-status-body');
-                    wallboxBody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
+                    wallboxBody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
                 });
         }
 
@@ -211,6 +217,26 @@
             fetch(`/inject_wallbox_fault/${instanceId}`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => console.log(data.message));
+        }
+
+        function setSoC(instanceId) {
+            const input = document.getElementById(`soc-input-${instanceId}`);
+            const socValue = input.value;
+            if (socValue === "" || socValue < 0 || socValue > 100) {
+                alert("Bitte geben Sie einen SoC-Wert zwischen 0 und 100 ein.");
+                return;
+            }
+            fetch(`/set_soc/${instanceId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ soc: socValue })
+            })
+            .then(res => res.json())
+            .then(data => {
+                console.log(data.message)
+                // Optional: force an immediate update to reflect the change visually
+                // updateStatus();
+            });
         }
 
         function updateCycleSpeedDisplay(speed) {
