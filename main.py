@@ -18,7 +18,7 @@ data_lock = threading.Lock()
 
 # Globale Konfiguration für die Simulation
 fault_flags = {}
-day_cycle_increment = 0.5
+day_cycle_increment = 0.2
 
 # --- Konfiguration ---
 HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
