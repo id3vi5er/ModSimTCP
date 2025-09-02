@@ -6,23 +6,29 @@ A specific German-language guide for setup is available here: [Anleitung.md](Anl
 
 ## Features
 
-*   **Multiple Modbus Servers**: Simulates 12 independent PV inverters, each on its own IP address.
-*   **Realistic Data**: Generates dynamic data for voltage, current, and power, simulating a daily solar cycle.
-*   **Web Monitoring UI**: A built-in Flask web server provides a dashboard to monitor all simulated inverters in real-time.
+*   **Multiple Modbus Servers**: Simulates 12 independent PV inverters and **12 Wallboxes**, each on its own IP address.
+*   **Realistic Data**: Generates dynamic data for a daily solar cycle (PV) and simulates interactive EV charging sessions (Wallbox).
+*   **Web Monitoring UI**: A built-in Flask web server provides a dashboard to monitor and control all simulated devices in real-time.
 *   **Configurable**: Easily change IP addresses, port, and update speed in the `main.py` script.
+
+![Frontend-Beispiel](image.png)
 
 ## Configuration
 
 Key options at the top of `main.py`:
 
-*   `HOST_IPS`: (Default: `10.10.10.120` to `10.10.10.131`) A list of IP addresses where the Modbus TCP servers will listen.
+*   `PV_HOST_IPS`: (Default: `10.10.10.120` to `10.10.10.131`) A list of IP addresses for the PV inverters.
+*   `WALLBOX_HOST_IPS`: (Default: `10.10.10.140` to `10.10.10.151`) A list of IP addresses for the Wallboxes.
 *   `TCP_PORT`: (Default: `5020`) The TCP port for all Modbus server instances.
 *   `UI_HOST`: (Default: `0.0.0.0`) The host address for the web monitoring UI.
 *   `UI_PORT`: (Default: `5010`) The port for the web monitoring UI.
 
-## Modbus Registers (per instance)
+## Modbus Registers
 
-The simulator provides a comprehensive set of registers for a detailed PV inverter simulation. It uses Modbus Holding Registers (read with Function Code 3), and all addresses are 1-indexed.
+The simulator provides two types of devices: PV Inverters and Wallboxes. It uses Modbus Holding Registers (read with Function Code 3), and all addresses are 1-indexed.
+
+### PV Inverter Registers (per instance)
+The simulator provides a comprehensive set of registers for a detailed PV inverter simulation.
 
 | Address | Name | Data Type | Client Factor | Unit | Description |
 |---|---|---|---|---|---|
@@ -43,6 +49,18 @@ The simulator provides a comprehensive set of registers for a detailed PV invert
 | 17 | DC Power | `INT16` | `1` | W | DC Input Power (P_DC) |
 
 **Note on 32-bit Registers:** `Daily Yield` and `Total Yield` are 32-bit unsigned integers (`UINT32`) that span two 16-bit Modbus registers. When reading, you must query both registers (e.g., starting at address 8 for a length of 2). The server stores values in **High Word First** order.
+
+### Wallbox Registers (per instance)
+
+| Address | Name | Data Type | Client Factor | Unit | Description |
+|---|---|---|---|---|---|
+| 20 | Wallbox State | `INT16` | `1` | - | `1`:Ready, `2`:Charging, `3`:Fault |
+| 21 | Charging Power | `INT16` | `1` | W | Current charging power |
+| 22 | State of Charge | `INT16` | `1` | % | SoC of the connected vehicle |
+| 23-24 | Charged Energy | `UINT32` | `1` | Wh | Energy transferred in this session |
+| 25 | Wallbox Fault Code | `INT16` | `1` | - | Active fault code (0=OK, 201=...) |
+
+---
 
 ## Running the Simulator
 
@@ -80,6 +98,19 @@ Here is an example configuration for **Ubuntu/Debian using `netplan`**.
             - 10.10.10.129/24
             - 10.10.10.130/24
             - 10.10.10.131/24
+            # Wallbox IPs
+            - 10.10.10.140/24
+            - 10.10.10.141/24
+            - 10.10.10.142/24
+            - 10.10.10.143/24
+            - 10.10.10.144/24
+            - 10.10.10.145/24
+            - 10.10.10.146/24
+            - 10.10.10.147/24
+            - 10.10.10.148/24
+            - 10.10.10.149/24
+            - 10.10.10.150/24
+            - 10.10.10.151/24
           routes:
             - to: default
               via: 10.10.10.1
