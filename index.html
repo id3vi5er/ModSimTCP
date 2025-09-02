@@ -53,11 +53,33 @@
             color: #f39c12;
             font-weight: bold;
         }
+        .controls-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .controls-container label {
+            font-weight: bold;
+        }
+        #cycle-speed-slider {
+            width: 300px;
+        }
     </style>
 </head>
 <body>
 
     <h1>Modbus PV Simulator Status</h1>
+
+    <div class="controls-container">
+        <label for="cycle-speed-slider">Simulationsgeschwindigkeit (Tag/Nacht-Zyklus):</label>
+        <input type="range" id="cycle-speed-slider" min="0.1" max="10" step="0.1" onchange="setCycleSpeed(this.value)">
+        <span id="cycle-speed-value"></span>
+    </div>
 
     <table>
         <thead>
@@ -74,6 +96,7 @@
                 <th>Tagesertrag (kWh)</th>
                 <th>DC Leistung (W)</th>
                 <th>Fehlercode</th>
+                <th>Aktion</th>
             </tr>
         </thead>
         <tbody id="server-status-body">
@@ -89,10 +112,15 @@
                     const tbody = document.getElementById('server-status-body');
                     tbody.innerHTML = ''; // Clear existing table data
 
-                    data.forEach(([instanceId, server]) => {
+                    // Update cycle speed slider and value display
+                    const cycleSpeedSlider = document.getElementById('cycle-speed-slider');
+                    const cycleSpeedValue = document.getElementById('cycle-speed-value');
+                    cycleSpeedSlider.value = data.day_cycle_increment;
+                    cycleSpeedValue.textContent = parseFloat(data.day_cycle_increment).toFixed(1);
+
+                    data.servers.forEach(([instanceId, server]) => {
                         const row = document.createElement('tr');
 
-                        // Standardwerte für den Fall, dass der Server initialisiert wird
                         const defaults = {
                             status: "Initializing",
                             temp: "N/A",
@@ -107,7 +135,6 @@
                             op_state: 0
                         };
                         
-                        // Überschreibe Standardwerte mit echten Daten, falls vorhanden
                         const displayData = { ...defaults, ...server };
 
                         let statusText = displayData.status;
@@ -129,7 +156,6 @@
                             statusClass = 'status-error';
                         }
 
-
                         row.innerHTML = `
                             <td>${instanceId}</td>
                             <td>${displayData.host_ip}</td>
@@ -143,6 +169,7 @@
                             <td>${displayData.daily_yield}</td>
                             <td>${displayData.dc_power}</td>
                             <td>${displayData.fault_code}</td>
+                            <td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>
                         `;
                         tbody.appendChild(row);
                     });
@@ -150,11 +177,40 @@
                 .catch(error => {
                     console.error('Fehler beim Abrufen der Daten:', error);
                     const tbody = document.getElementById('server-status-body');
-                    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; color: red;">Fehler beim Laden der Daten. Läuft der Server?</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten. Läuft der Server?</td></tr>';
                 });
         }
 
-        // Update alle 2 Sekunden (passend zum Server-Intervall)
+        function injectFault(instanceId) {
+            fetch(`/inject_fault/${instanceId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data.message);
+                updateStatus(); // Refresh data to show fault status immediately
+            })
+            .catch(error => console.error('Fehler bei der Fehlerinjektion:', error));
+        }
+
+        function setCycleSpeed(speed) {
+            document.getElementById('cycle-speed-value').textContent = parseFloat(speed).toFixed(1);
+            fetch('/set_cycle_speed', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ speed: speed })
+            })
+            .then(response => response.json())
+            .then(data => console.log(data.message))
+            .catch(error => console.error('Fehler beim Setzen der Zyklusgeschwindigkeit:', error));
+        }
+
+        // Update alle 2 Sekunden
         setInterval(updateStatus, 2000);
 
         // Initialer Ladevorgang

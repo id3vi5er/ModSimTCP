@@ -9,12 +9,16 @@ import datetime
 from pymodbus.server import StartTcpServer
 from pymodbus.datastore import ModbusSequentialDataBlock
 from pymodbus.datastore import ModbusDeviceContext, ModbusServerContext
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 
 # --- Globale Daten und Sperren ---
 # Thread-sichere Datenablage für den UI-Status
 server_data = {}
 data_lock = threading.Lock()
+
+# Globale Konfiguration für die Simulation
+fault_flags = {}
+day_cycle_increment = 0.5
 
 # --- Konfiguration ---
 HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
@@ -73,6 +77,7 @@ def simulate_pv_values(datablock, instance_id, host_ip):
     Diese Funktion läuft in einem separaten Thread und aktualisiert
     kontinuierlich die Werte im Modbus Datastore für eine bestimmte Instanz.
     """
+    global fault_flags, day_cycle_increment
     print(f"Starte Simulation der PV-Werte für Instanz {instance_id}...")
     
     day_cycle_counter = instance_id * 30
@@ -83,6 +88,12 @@ def simulate_pv_values(datablock, instance_id, host_ip):
 
     while True:
         try:
+            # Fehlerinjektion prüfen
+            if fault_flags.get(instance_id):
+                fault_timer = 15  # 15 Zyklen * 2s/Zyklus = 30s Fehler
+                fault_flags[instance_id] = False
+                print(f"Manueller Fehler für Instanz {instance_id} injiziert.")
+
             current_day = datetime.date.today().day
             if current_day != last_reset_day:
                 daily_yield_wh = 0.0
@@ -119,8 +130,6 @@ def simulate_pv_values(datablock, instance_id, host_ip):
                 operating_state, fault_code = 2, 0
             else:
                 operating_state, fault_code = 1, 0
-            
-            if random.randint(0, 1000) == 1: fault_timer = 5
 
             # 4. Energiezähler
             energy_this_interval_wh = active_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
@@ -162,7 +171,7 @@ def simulate_pv_values(datablock, instance_id, host_ip):
                     "dc_power": f"{dc_power:.0f} W"
                 }
             
-            day_cycle_counter = (day_cycle_counter + 0.5) % 360
+            day_cycle_counter = (day_cycle_counter + day_cycle_increment) % 360
             time.sleep(UPDATE_INTERVAL_SECONDS)
             
         except Exception as e:
@@ -183,8 +192,38 @@ def index():
 @app.route('/data')
 def data():
     with data_lock:
-        sorted_data = sorted(server_data.items())
-    return jsonify(sorted_data)
+        response_data = {
+            "servers": sorted(server_data.items()),
+            "day_cycle_increment": day_cycle_increment
+        }
+    return jsonify(response_data)
+
+@app.route('/inject_fault/<int:instance_id>', methods=['POST'])
+def inject_fault(instance_id):
+    global fault_flags
+    if instance_id in fault_flags:
+        fault_flags[instance_id] = True
+        print(f"Fehlerinjektion für Instanz {instance_id} angefordert.")
+        return jsonify({"status": "success", "message": f"Fault injected for instance {instance_id}"})
+    else:
+        return jsonify({"status": "error", "message": "Invalid instance ID"}), 404
+
+@app.route('/set_cycle_speed', methods=['POST'])
+def set_cycle_speed():
+    global day_cycle_increment
+    data = request.get_json()
+    if data and 'speed' in data:
+        try:
+            new_speed = float(data['speed'])
+            if 0.1 <= new_speed <= 10.0:
+                day_cycle_increment = new_speed
+                print(f"Zyklusgeschwindigkeit auf {new_speed} gesetzt.")
+                return jsonify({"status": "success", "message": f"Cycle speed set to {day_cycle_increment}"})
+            else:
+                return jsonify({"status": "error", "message": "Speed value out of range (0.1-10.0)"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"status": "error", "message": "Invalid speed value"}), 400
+    return jsonify({"status": "error", "message": "Missing or invalid 'speed' parameter"}), 400
 
 def run_flask_app():
     print(f"UI wird auf http://{UI_HOST}:{UI_PORT} gestartet...")
@@ -223,6 +262,10 @@ def main():
     """
     Hauptfunktion: Initialisiert und startet mehrere Modbus Server Instanzen und das Web-UI.
     """
+    global fault_flags
+    for i in range(len(HOST_IPS)):
+        fault_flags[i + 1] = False
+
     ui_thread = threading.Thread(target=run_flask_app)
     ui_thread.daemon = True
     ui_thread.start()
