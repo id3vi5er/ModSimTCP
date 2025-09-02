@@ -76,9 +76,10 @@
     <h1>Modbus PV Simulator Status</h1>
 
     <div class="controls-container">
-        <label for="cycle-speed-slider">Simulationsgeschwindigkeit (Tag/Nacht-Zyklus):</label>
+        <label for="cycle-speed-slider">Simulationsgeschwindigkeit:</label>
         <input type="range" id="cycle-speed-slider" min="0.1" max="10" step="0.1" onchange="setCycleSpeed(this.value)">
         <span id="cycle-speed-value"></span>
+        <span id="cycle-time-display" style="min-width: 200px;"></span>
     </div>
 
     <table>
@@ -113,28 +114,17 @@
                     tbody.innerHTML = ''; // Clear existing table data
 
                     // Update cycle speed slider and value display
-                    const cycleSpeedSlider = document.getElementById('cycle-speed-slider');
-                    const cycleSpeedValue = document.getElementById('cycle-speed-value');
-                    cycleSpeedSlider.value = data.day_cycle_increment;
-                    cycleSpeedValue.textContent = parseFloat(data.day_cycle_increment).toFixed(1);
+                    const currentSpeed = data.day_cycle_increment;
+                    document.getElementById('cycle-speed-slider').value = currentSpeed;
+                    updateCycleSpeedDisplay(currentSpeed);
 
                     data.servers.forEach(([instanceId, server]) => {
                         const row = document.createElement('tr');
-
                         const defaults = {
-                            status: "Initializing",
-                            temp: "N/A",
-                            ac_voltage: "N/A",
-                            ac_current: "N/A",
-                            active_power: "N/A",
-                            power_factor: "N/A",
-                            frequency: "N/A",
-                            daily_yield: "N/A",
-                            dc_power: "N/A",
-                            fault_code: "N/A",
-                            op_state: 0
+                            status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A",
+                            active_power: "N/A", power_factor: "N/A", frequency: "N/A",
+                            daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0
                         };
-                        
                         const displayData = { ...defaults, ...server };
 
                         let statusText = displayData.status;
@@ -182,27 +172,27 @@
         }
 
         function injectFault(instanceId) {
-            fetch(`/inject_fault/${instanceId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
+            fetch(`/inject_fault/${instanceId}`, { method: 'POST' })
             .then(response => response.json())
             .then(data => {
                 console.log(data.message);
-                updateStatus(); // Refresh data to show fault status immediately
+                updateStatus();
             })
             .catch(error => console.error('Fehler bei der Fehlerinjektion:', error));
         }
 
+        function updateCycleSpeedDisplay(speed) {
+            const speedValue = parseFloat(speed);
+            document.getElementById('cycle-speed-value').textContent = `Faktor: ${speedValue.toFixed(1)}`;
+            const totalMinutes = (360 / speedValue) * 2 / 60;
+            document.getElementById('cycle-time-display').textContent = `(ca. ${totalMinutes.toFixed(1)} Min./Zyklus)`;
+        }
+
         function setCycleSpeed(speed) {
-            document.getElementById('cycle-speed-value').textContent = parseFloat(speed).toFixed(1);
+            updateCycleSpeedDisplay(speed);
             fetch('/set_cycle_speed', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ speed: speed })
             })
             .then(response => response.json())
