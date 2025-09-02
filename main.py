@@ -14,18 +14,21 @@ from flask import Flask, render_template, jsonify, request
 # --- Globale Daten und Sperren ---
 # Thread-sichere Datenablage für den UI-Status
 server_data = {}
+wallbox_data = {} # NEU für Wallboxen
 data_lock = threading.Lock()
 
 # Globale Konfiguration für die Simulation
 fault_flags = {}
+wallbox_controls = {} # NEU für Wallboxen
 day_cycle_increment = 0.2
 
 # --- Konfiguration ---
-HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
+PV_HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
+WALLBOX_HOST_IPS = [f"10.10.10.{140 + i}" for i in range(12)] # NEU für Wallboxen
 TCP_PORT = 5020
 UPDATE_INTERVAL_SECONDS = 2
 
-# --- Register-Adressen (Holding Registers, beginnend bei 0) ---
+# --- PV-Register-Adressen (Holding Registers, beginnend bei 0) ---
 # Hinweis: Die Adressen sind um 1 verschoben gegenüber der üblichen Modbus-Dokumentation
 VOLTAGE_REGISTER = 1          # AC Spannung (U)
 CURRENT_REGISTER = 2          # AC Strom (I)
@@ -64,6 +67,14 @@ FREQUENCY_SCALING = 100.0
 TEMP_SCALING = 10.0
 DC_VOLTAGE_SCALING = 10.0
 DC_CURRENT_SCALING = 100.0
+
+# --- Wallbox-Register-Adressen ---
+WALLBOX_STATE_REGISTER = 20      # 1:Bereit, 2:Ladevorgang, 3:Fehler
+CHARGING_POWER_REGISTER = 21     # Ladeleistung in W
+STATE_OF_CHARGE_REGISTER = 22    # SoC in %
+CHARGED_ENERGY_REGISTER = 23     # Geladene Energie (UINT32), Wh
+WALLBOX_FAULT_CODE_REGISTER = 25 # Fehlercode (0=OK, 201=Ladefehler)
+
 
 def split_32bit_value(value):
     """Teilt einen 32-Bit-Wert in zwei 16-Bit-Werte (High und Low Word)."""
@@ -180,6 +191,104 @@ def simulate_pv_values(datablock, instance_id, host_ip):
                 server_data[instance_id] = {"status": f"Error: {e}"}
             time.sleep(10)
 
+
+def simulate_wallbox_values(datablock, instance_id, host_ip):
+    """
+    Diese Funktion läuft in einem separaten Thread und simuliert die Werte
+    einer Wallbox für eine bestimmte Instanz.
+    """
+    global wallbox_controls
+    print(f"Starte Simulation der Wallbox-Werte für Instanz {instance_id}...")
+
+    # Wallbox-Zustand: 1=Bereit, 2=Ladevorgang, 3=Fehler
+    state = 1
+    soc = 0  # Ladezustand in %
+    charging_power = 0  # Ladeleistung in W
+    charged_energy = 0.0  # Geladene Energie in Wh
+    fault_code = 0
+    fault_timer = 0
+
+    while True:
+        try:
+            # 1. Steuerbefehle aus der UI verarbeiten
+            control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
+            if control_action == 'start_charging' and state != 3:
+                state = 2
+                if soc < 20:
+                    soc = 20
+                charged_energy = 0.0 # Zähler zurücksetzen
+                print(f"[Wallbox {instance_id}] Ladevorgang gestartet.")
+            elif control_action == 'stop_charging':
+                state = 1
+                print(f"[Wallbox {instance_id}] Ladevorgang gestoppt.")
+            elif control_action == 'inject_fault':
+                state = 3
+                fault_code = 201
+                fault_timer = 30 # 30 Zyklen = 60s Fehler
+                print(f"[Wallbox {instance_id}] Fehler injiziert.")
+
+            # 2. Simulationslogik basierend auf dem Zustand
+            if state == 2:  # Ladevorgang
+                # Ladeleistung simulieren (z.B. 11 kW mit Schwankung)
+                charging_power = 11000 + (random.random() - 0.5) * 100
+
+                # SoC erhöhen (sehr vereinfachte Annahme: 11kWh lädt ca. 50% in 1h)
+                # Annahme: 11000 Wh / 3600s = 3.05 Ws -> 3.05 Wh pro Sekunde
+                # Pro Update-Intervall: 3.05 * UPDATE_INTERVAL_SECONDS
+                # Annahme Batteriekapazität 60kWh = 60000 Wh
+                # SoC-Erhöhung pro Intervall = (geladene Energie Wh / Batteriekapazität Wh) * 100
+                energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
+                charged_energy += energy_this_interval_wh
+
+                soc_increase = (energy_this_interval_wh / 60000.0) * 100
+                soc += soc_increase
+
+                if soc >= 100:
+                    soc = 100
+                    state = 1  # Ladevorgang beendet
+                    print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen (SoC 100%).")
+
+            elif state == 1:  # Bereit
+                charging_power = 0
+                # SoC bleibt erhalten bis zum nächsten Ladevorgang
+
+            elif state == 3:  # Fehler
+                charging_power = 0
+                fault_timer -= 1
+                if fault_timer <= 0:
+                    state = 1 # Fehler zurücksetzen
+                    fault_code = 0
+                    print(f"[Wallbox {instance_id}] Fehlerzustand beendet.")
+
+            # 3. Werte in Register schreiben
+            datablock.setValues(WALLBOX_STATE_REGISTER, [state])
+            datablock.setValues(CHARGING_POWER_REGISTER, [int(charging_power)])
+            datablock.setValues(STATE_OF_CHARGE_REGISTER, [int(soc)])
+            datablock.setValues(CHARGED_ENERGY_REGISTER, split_32bit_value(charged_energy))
+            datablock.setValues(WALLBOX_FAULT_CODE_REGISTER, [fault_code])
+
+            # 4. Daten für Web-UI aktualisieren
+            with data_lock:
+                status_map = {1: "Bereit", 2: "Ladevorgang", 3: "Fehler"}
+                wallbox_data[instance_id] = {
+                    "host_ip": host_ip,
+                    "status": status_map.get(state, "Unbekannt"),
+                    "charging_power": f"{charging_power:.0f} W",
+                    "soc": f"{soc:.1f} %",
+                    "charged_energy": f"{charged_energy / 1000.0:.3f} kWh",
+                    "fault_code": fault_code,
+                    "state": state
+                }
+
+            time.sleep(UPDATE_INTERVAL_SECONDS)
+
+        except Exception as e:
+            print(f"Fehler im Wallbox-Update-Thread für Instanz {instance_id}: {e}")
+            with data_lock:
+                wallbox_data[instance_id] = {"status": f"Error: {e}"}
+            time.sleep(10)
+
+
 # --- Web UI (Flask) ---
 app = Flask(__name__, template_folder='.')
 UI_HOST = "0.0.0.0"
@@ -194,9 +303,31 @@ def data():
     with data_lock:
         response_data = {
             "servers": sorted(server_data.items()),
+            "wallboxes": sorted(wallbox_data.items()), # NEU
             "day_cycle_increment": day_cycle_increment
         }
     return jsonify(response_data)
+
+@app.route('/start_charging/<int:instance_id>', methods=['POST'])
+def start_charging(instance_id):
+    if instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'start_charging'
+        return jsonify({"status": "success", "message": f"Start charging command sent to wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
+
+@app.route('/stop_charging/<int:instance_id>', methods=['POST'])
+def stop_charging(instance_id):
+    if instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'stop_charging'
+        return jsonify({"status": "success", "message": f"Stop charging command sent to wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
+
+@app.route('/inject_wallbox_fault/<int:instance_id>', methods=['POST'])
+def inject_wallbox_fault(instance_id):
+    if instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'inject_fault'
+        return jsonify({"status": "success", "message": f"Fault injection command sent to wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
 
 @app.route('/inject_fault/<int:instance_id>', methods=['POST'])
 def inject_fault(instance_id):
@@ -229,32 +360,33 @@ def run_flask_app():
     print(f"UI wird auf http://{UI_HOST}:{UI_PORT} gestartet...")
     app.run(host=UI_HOST, port=UI_PORT, debug=True, use_reloader=False)
 
-def start_modbus_server_instance(host_ip, instance_id):
+def start_modbus_server_instance(host_ip, instance_id, sim_type='pv'):
     """
-    Initialisiert und startet eine einzelne Modbus TCP Server Instanz.
-    Diese Funktion bleibt strukturell unverändert.
+    Initialisiert und startet eine einzelne Modbus TCP Server Instanz
+    für einen PV-Wechselrichter oder eine Wallbox.
     """
-    with data_lock:
-        server_data[instance_id] = {"host_ip": host_ip, "status": "Initializing"}
-
-    print(f"Initialisiere Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
-    
     datablock = ModbusSequentialDataBlock(0, [0] * 100)
-    
-    # Der Geräte-Kontext wird hier erstellt, wie in Ihrer Version
     device_context = ModbusDeviceContext(hr=datablock)
-    
-    # Der Server-Kontext wird als Dictionary definiert, wie in Ihrer Version
-    context = {
-        1: device_context
-    }
+    context = {1: device_context}
 
-    update_thread = threading.Thread(target=simulate_pv_values, args=(datablock, instance_id, host_ip))
+    if sim_type == 'pv':
+        with data_lock:
+            server_data[instance_id] = {"host_ip": host_ip, "status": "Initializing"}
+        print(f"Initialisiere PV Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
+        target_func = simulate_pv_values
+    elif sim_type == 'wallbox':
+        with data_lock:
+            wallbox_data[instance_id] = {"host_ip": host_ip, "status": "Initializing"}
+        print(f"Initialisiere Wallbox Modbus Datastore für Instanz {instance_id} auf {host_ip}:{TCP_PORT}...")
+        target_func = simulate_wallbox_values
+    else:
+        return
+
+    update_thread = threading.Thread(target=target_func, args=(datablock, instance_id, host_ip))
     update_thread.daemon = True
     update_thread.start()
 
-    print(f"Modbus TCP Slave für Instanz {instance_id} wird auf {host_ip}:{TCP_PORT} gestartet...")
-    # StartTcpServer wird hier ohne 'single=True' aufgerufen, wie in Ihrer Version
+    print(f"Modbus TCP Slave ({sim_type}) für Instanz {instance_id} wird auf {host_ip}:{TCP_PORT} gestartet...")
     StartTcpServer(context=context, address=(host_ip, TCP_PORT))
 
 
@@ -262,24 +394,39 @@ def main():
     """
     Hauptfunktion: Initialisiert und startet mehrere Modbus Server Instanzen und das Web-UI.
     """
-    global fault_flags
-    for i in range(len(HOST_IPS)):
+    global fault_flags, wallbox_controls
+    # Initialisierung für PV-Wechselrichter
+    for i in range(len(PV_HOST_IPS)):
         fault_flags[i + 1] = False
+    # Initialisierung für Wallboxen
+    for i in range(len(WALLBOX_HOST_IPS)):
+        wallbox_controls[i + 1] = {}
 
     ui_thread = threading.Thread(target=run_flask_app)
     ui_thread.daemon = True
     ui_thread.start()
 
     server_threads = []
-    for i, host_ip in enumerate(HOST_IPS):
-        server_thread = threading.Thread(target=start_modbus_server_instance, args=(host_ip, i + 1))
+    # PV-Simulatoren starten
+    for i, host_ip in enumerate(PV_HOST_IPS):
+        server_thread = threading.Thread(target=start_modbus_server_instance, args=(host_ip, i + 1, 'pv'))
         server_thread.daemon = True
         server_threads.append(server_thread)
         server_thread.start()
-        print(f"Server-Thread für {host_ip} gestartet.")
+        print(f"PV-Server-Thread für {host_ip} gestartet.")
         time.sleep(0.1)
 
-    print(f"{len(HOST_IPS)} Modbus TCP Server Instanzen gestartet.")
+    # Wallbox-Simulatoren starten
+    for i, host_ip in enumerate(WALLBOX_HOST_IPS):
+        server_thread = threading.Thread(target=start_modbus_server_instance, args=(host_ip, i + 1, 'wallbox'))
+        server_thread.daemon = True
+        server_threads.append(server_thread)
+        server_thread.start()
+        print(f"Wallbox-Server-Thread für {host_ip} gestartet.")
+        time.sleep(0.1)
+
+    total_instances = len(PV_HOST_IPS) + len(WALLBOX_HOST_IPS)
+    print(f"{total_instances} Modbus TCP Server Instanzen gestartet.")
     print("Drücken Sie Strg+C zum Beenden.")
 
     try:

@@ -105,80 +105,112 @@
         </tbody>
     </table>
 
+    <h2 style="text-align: center; color: #2c3e50; margin-top: 40px;">Wallbox Simulatoren</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Host IP</th>
+                <th>Status</th>
+                <th>Ladeleistung (W)</th>
+                <th>Ladezustand (SoC)</th>
+                <th>Geladene Energie (kWh)</th>
+                <th>Fehlercode</th>
+                <th>Aktion</th>
+            </tr>
+        </thead>
+        <tbody id="wallbox-status-body">
+            <!-- Daten werden hier per JavaScript eingefügt -->
+        </tbody>
+    </table>
+
     <script>
         function updateStatus() {
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
-                    const tbody = document.getElementById('server-status-body');
-                    tbody.innerHTML = ''; // Clear existing table data
-
-                    // Update cycle speed slider and value display
+                    // --- PV-Simulatoren aktualisieren ---
+                    const pvBody = document.getElementById('server-status-body');
+                    pvBody.innerHTML = '';
                     const currentSpeed = data.day_cycle_increment;
                     document.getElementById('cycle-speed-slider').value = currentSpeed;
                     updateCycleSpeedDisplay(currentSpeed);
 
                     data.servers.forEach(([instanceId, server]) => {
                         const row = document.createElement('tr');
-                        const defaults = {
-                            status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A",
-                            active_power: "N/A", power_factor: "N/A", frequency: "N/A",
-                            daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0
-                        };
+                        const defaults = { status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A", active_power: "N/A", power_factor: "N/A", frequency: "N/A", daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0 };
                         const displayData = { ...defaults, ...server };
 
                         let statusText = displayData.status;
                         let statusClass = 'status-initializing';
-
                         if (displayData.status === 'Running') {
-                            if (displayData.op_state === 2) {
-                                statusText = 'Einspeisung';
-                                statusClass = 'status-running';
-                            } else if (displayData.op_state === 1) {
-                                statusText = 'Standby';
-                                statusClass = 'status-standby';
-                            }
-                        } else if (displayData.status.startsWith('Fault')) {
-                            statusText = 'Fehler';
-                            statusClass = 'status-fault';
-                        } else if (displayData.status.startsWith('Error')) {
-                            statusText = 'Verbindungsfehler';
-                            statusClass = 'status-error';
-                        }
+                            if (displayData.op_state === 2) { statusText = 'Einspeisung'; statusClass = 'status-running'; }
+                            else if (displayData.op_state === 1) { statusText = 'Standby'; statusClass = 'status-standby'; }
+                        } else if (displayData.status.startsWith('Fault')) { statusText = 'Fehler'; statusClass = 'status-fault';
+                        } else if (displayData.status.startsWith('Error')) { statusText = 'Verbindungsfehler'; statusClass = 'status-error'; }
+
+                        row.innerHTML = `<td>${instanceId}</td><td>${displayData.host_ip}</td><td class="${statusClass}">${statusText}</td><td>${displayData.temp}</td><td>${displayData.ac_voltage}</td><td>${displayData.ac_current}</td><td>${displayData.active_power}</td><td>${displayData.power_factor}</td><td>${displayData.frequency}</td><td>${displayData.daily_yield}</td><td>${displayData.dc_power}</td><td>${displayData.fault_code}</td><td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>`;
+                        pvBody.appendChild(row);
+                    });
+
+                    // --- Wallbox-Simulatoren aktualisieren ---
+                    const wallboxBody = document.getElementById('wallbox-status-body');
+                    wallboxBody.innerHTML = '';
+                    data.wallboxes.forEach(([instanceId, wallbox]) => {
+                        const row = document.createElement('tr');
+                        const defaults = { status: "Initializing", charging_power: "N/A", soc: "N/A", charged_energy: "N/A", fault_code: "N/A", state: 1 };
+                        const displayData = { ...defaults, ...wallbox };
+
+                        let statusClass = 'status-initializing';
+                        if (displayData.state === 2) statusClass = 'status-running'; // Ladevorgang
+                        else if (displayData.state === 1) statusClass = 'status-standby'; // Bereit
+                        else if (displayData.state === 3) statusClass = 'status-fault'; // Fehler
+
+                        const chargeButtonText = displayData.state === 2 ? 'Laden stoppen' : 'Laden starten';
+                        const chargeButtonFunc = `toggleCharging(${instanceId}, ${displayData.state})`;
+                        const chargeButtonDisabled = displayData.state === 3 ? 'disabled' : '';
 
                         row.innerHTML = `
                             <td>${instanceId}</td>
                             <td>${displayData.host_ip}</td>
-                            <td class="${statusClass}">${statusText}</td>
-                            <td>${displayData.temp}</td>
-                            <td>${displayData.ac_voltage}</td>
-                            <td>${displayData.ac_current}</td>
-                            <td>${displayData.active_power}</td>
-                            <td>${displayData.power_factor}</td>
-                            <td>${displayData.frequency}</td>
-                            <td>${displayData.daily_yield}</td>
-                            <td>${displayData.dc_power}</td>
+                            <td class="${statusClass}">${displayData.status}</td>
+                            <td>${displayData.charging_power}</td>
+                            <td>${displayData.soc}</td>
+                            <td>${displayData.charged_energy}</td>
                             <td>${displayData.fault_code}</td>
-                            <td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>
+                            <td>
+                                <button onclick="${chargeButtonFunc}" ${chargeButtonDisabled}>${chargeButtonText}</button>
+                                <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
+                            </td>
                         `;
-                        tbody.appendChild(row);
+                        wallboxBody.appendChild(row);
                     });
                 })
                 .catch(error => {
                     console.error('Fehler beim Abrufen der Daten:', error);
-                    const tbody = document.getElementById('server-status-body');
-                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten. Läuft der Server?</td></tr>';
+                    const pvBody = document.getElementById('server-status-body');
+                    pvBody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten.</td></tr>';
+                    const wallboxBody = document.getElementById('wallbox-status-body');
+                    wallboxBody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
                 });
         }
 
         function injectFault(instanceId) {
-            fetch(`/inject_fault/${instanceId}`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                console.log(data.message);
-                updateStatus();
-            })
-            .catch(error => console.error('Fehler bei der Fehlerinjektion:', error));
+            fetch(`/inject_fault/${instanceId}`, { method: 'POST' }).then(res => res.json()).then(data => console.log(data.message));
+        }
+
+        function toggleCharging(instanceId, state) {
+            const action = state === 2 ? 'stop_charging' : 'start_charging';
+            fetch(`/${action}/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function injectWallboxFault(instanceId) {
+            fetch(`/inject_wallbox_fault/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
         }
 
         function updateCycleSpeedDisplay(speed) {
