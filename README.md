@@ -97,7 +97,7 @@ Here is an example configuration for **Ubuntu/Debian using `netplan`**.
 
 The script requires `pymodbus` for the Modbus servers and `flask` for the web UI.
 ```bash
-pip install pymodbus flask
+pip install -r requirements.txt
 ```
 
 ### 3. Launch the Script
