@@ -195,38 +195,40 @@ def simulate_pv_values(datablock, instance_id, host_ip):
 def simulate_wallbox_values(datablock, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und simuliert die Werte
-    einer Wallbox für eine bestimmte Instanz.
+    einer Wallbox für eine bestimmte Instanz. Die Ladegeschwindigkeit
+    ist an den Tag-Nacht-Zyklus gekoppelt.
     """
-    global wallbox_controls
+    global wallbox_controls, day_cycle_increment
     print(f"Starte Simulation der Wallbox-Werte für Instanz {instance_id}...")
 
-    # Wallbox-Zustand: 1=Bereit, 2=Ladevorgang, 3=Fehler
-    state = 1
-    soc = 0  # Ladezustand in %
-    charging_power = 0  # Ladeleistung in W
-    charged_energy = 0.0  # Geladene Energie in Wh
+    # Zustandvariablen
+    state = 1  # 1:Bereit, 2:Ladevorgang, 3:Fehler
+    soc = 0
+    charged_energy = 0.0
     fault_code = 0
     fault_timer = 0
+
+    # Zähler für den Tag-Nacht-Zyklus, analog zur PV-Simulation
+    day_cycle_counter = instance_id * 30
 
     while True:
         try:
             # 1. Steuerbefehle aus der UI verarbeiten
             control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
 
-            if control_action == 'set_soc' and state == 1: # Nur im Zustand "Bereit"
+            if control_action == 'set_soc' and state == 1:
                 try:
                     new_soc = int(wallbox_controls.get(instance_id, {}).pop('value', soc))
                     if 0 <= new_soc <= 100:
                         soc = new_soc
                         print(f"[Wallbox {instance_id}] SoC auf {soc}% gesetzt.")
                 except (ValueError, TypeError):
-                    pass # Ungültige Werte ignorieren
+                    pass
 
             elif control_action == 'start_charging' and state != 3:
                 state = 2
-                if soc < 20:
-                    soc = 20
-                charged_energy = 0.0 # Zähler zurücksetzen
+                if soc < 20: soc = 20
+                charged_energy = 0.0
                 print(f"[Wallbox {instance_id}] Ladevorgang gestartet.")
             elif control_action == 'stop_charging':
                 state = 1
@@ -234,39 +236,39 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
             elif control_action == 'inject_fault':
                 state = 3
                 fault_code = 201
-                fault_timer = 30 # 30 Zyklen = 60s Fehler
+                fault_timer = 30
                 print(f"[Wallbox {instance_id}] Fehler injiziert.")
 
             # 2. Simulationslogik basierend auf dem Zustand
-            if state == 2:  # Ladevorgang
-                # Ladeleistung simulieren (z.B. 11 kW mit Schwankung)
-                charging_power = 11000 + (random.random() - 0.5) * 100
+            sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
 
-                # SoC erhöhen (sehr vereinfachte Annahme: 11kWh lädt ca. 50% in 1h)
-                # Annahme: 11000 Wh / 3600s = 3.05 Ws -> 3.05 Wh pro Sekunde
-                # Pro Update-Intervall: 3.05 * UPDATE_INTERVAL_SECONDS
-                # Annahme Batteriekapazität 60kWh = 60000 Wh
-                # SoC-Erhöhung pro Intervall = (geladene Energie Wh / Batteriekapazität Wh) * 100
+            if state == 2:  # Ladevorgang
+                # Ladeleistung ist jetzt an die Sinuskurve des Tageszyklus gekoppelt
+                max_charging_power = 11000  # 11 kW
+                charging_power = sine_wave * max_charging_power + (random.random() - 0.5) * 50
+                if charging_power < 100:  # Ladeschwelle, um bei "Nacht" nicht zu laden
+                    charging_power = 0
+
                 energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
                 charged_energy += energy_this_interval_wh
 
+                # Annahme Batteriekapazität 60kWh für SoC-Berechnung
                 soc_increase = (energy_this_interval_wh / 60000.0) * 100
                 soc += soc_increase
 
                 if soc >= 100:
                     soc = 100
-                    state = 1  # Ladevorgang beendet
+                    state = 1
                     print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen (SoC 100%).")
 
             elif state == 1:  # Bereit
                 charging_power = 0
-                # SoC bleibt erhalten bis zum nächsten Ladevorgang
 
             elif state == 3:  # Fehler
                 charging_power = 0
                 fault_timer -= 1
                 if fault_timer <= 0:
-                    state = 1 # Fehler zurücksetzen
+                    state = 1
                     fault_code = 0
                     print(f"[Wallbox {instance_id}] Fehlerzustand beendet.")
 
@@ -290,6 +292,8 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                     "state": state
                 }
 
+            # Zykluszähler für den nächsten Durchlauf erhöhen
+            day_cycle_counter = (day_cycle_counter + day_cycle_increment) % 360
             time.sleep(UPDATE_INTERVAL_SECONDS)
 
         except Exception as e:
