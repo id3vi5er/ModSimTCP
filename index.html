@@ -131,7 +131,7 @@
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
-                    // --- PV-Simulatoren aktualisieren ---
+                    // --- PV-Simulatoren aktualisieren (bleibt wie bisher) ---
                     const pvBody = document.getElementById('server-status-body');
                     pvBody.innerHTML = '';
                     const currentSpeed = data.day_cycle_increment;
@@ -155,50 +155,75 @@
                         pvBody.appendChild(row);
                     });
 
-                    // --- Wallbox-Simulatoren aktualisieren ---
+                    // --- Wallbox-Simulatoren aktualisieren (mit granularer DOM-Aktualisierung) ---
                     const wallboxBody = document.getElementById('wallbox-status-body');
-                    wallboxBody.innerHTML = '';
+
                     data.wallboxes.forEach(([instanceId, wallbox]) => {
-                        const row = document.createElement('tr');
                         const defaults = { status: "Initializing", charging_power: "N/A", soc: "N/A", charged_energy: "N/A", fault_code: "N/A", state: 1 };
                         const displayData = { ...defaults, ...wallbox };
 
-                        let statusClass = 'status-initializing';
-                        if (displayData.state === 2) statusClass = 'status-running'; // Ladevorgang
-                        else if (displayData.state === 1) statusClass = 'status-standby'; // Bereit
-                        else if (displayData.state === 3) statusClass = 'status-fault'; // Fehler
+                        let row = document.getElementById(`wallbox-row-${instanceId}`);
+                        if (!row) {
+                            row = document.createElement('tr');
+                            row.id = `wallbox-row-${instanceId}`;
+                            row.innerHTML = `
+                                <td>${instanceId}</td>
+                                <td class="wb-host-ip"></td>
+                                <td class="wb-status"></td>
+                                <td class="wb-charging-power"></td>
+                                <td class="wb-soc"></td>
+                                <td class="wb-charged-energy"></td>
+                                <td class="wb-fault-code"></td>
+                                <td class="wb-actions"></td>
+                                <td class="wb-set-soc">
+                                    <input type="number" id="soc-input-${instanceId}" min="0" max="100" style="width: 60px;">
+                                    <button onclick="setSoC(${instanceId})">Setzen</button>
+                                </td>
+                            `;
+                            wallboxBody.appendChild(row);
+                        }
 
+                        // Zellen aktualisieren
+                        row.querySelector('.wb-host-ip').textContent = displayData.host_ip;
+                        row.querySelector('.wb-charging-power').textContent = displayData.charging_power;
+                        row.querySelector('.wb-soc').textContent = displayData.soc;
+                        row.querySelector('.wb-charged-energy').textContent = displayData.charged_energy;
+                        row.querySelector('.wb-fault-code').textContent = displayData.fault_code;
+
+                        // Status Zelle (mit Klasse)
+                        const statusCell = row.querySelector('.wb-status');
+                        statusCell.textContent = displayData.status;
+                        statusCell.className = 'wb-status'; // Klassen zurücksetzen
+                        if (displayData.state === 2) statusCell.classList.add('status-running');
+                        else if (displayData.state === 1) statusCell.classList.add('status-standby');
+                        else if (displayData.state === 3) statusCell.classList.add('status-fault');
+
+                        // Aktionen Zelle
+                        const actionCell = row.querySelector('.wb-actions');
+                        const chargeButtonDisabled = displayData.state === 3;
                         const chargeButtonText = displayData.state === 2 ? 'Laden stoppen' : 'Laden starten';
-                        const chargeButtonFunc = `toggleCharging(${instanceId}, ${displayData.state})`;
-                        const chargeButtonDisabled = displayData.state === 3 ? 'disabled' : '';
-                        const socInputDisabled = displayData.state !== 1 ? 'disabled' : '';
-
-                        row.innerHTML = `
-                            <td>${instanceId}</td>
-                            <td>${displayData.host_ip}</td>
-                            <td class="${statusClass}">${displayData.status}</td>
-                            <td>${displayData.charging_power}</td>
-                            <td>${displayData.soc}</td>
-                            <td>${displayData.charged_energy}</td>
-                            <td>${displayData.fault_code}</td>
-                            <td>
-                                <button onclick="${chargeButtonFunc}" ${chargeButtonDisabled}>${chargeButtonText}</button>
-                                <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
-                            </td>
-                            <td>
-                                <input type="number" id="soc-input-${instanceId}" min="0" max="100" style="width: 60px;" value="${Math.round(parseFloat(displayData.soc))}" ${socInputDisabled}>
-                                <button onclick="setSoC(${instanceId})" ${socInputDisabled}>Setzen</button>
-                            </td>
+                        actionCell.innerHTML = `
+                            <button onclick="toggleCharging(${instanceId}, ${displayData.state})" ${chargeButtonDisabled ? 'disabled' : ''}>${chargeButtonText}</button>
+                            <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
                         `;
-                        wallboxBody.appendChild(row);
+
+                        // SoC-Eingabe Zelle (mit Fokusprüfung)
+                        const socInput = row.querySelector(`#soc-input-${instanceId}`);
+                        const setSocButton = socInput.nextElementSibling;
+
+                        if (document.activeElement !== socInput) {
+                            socInput.value = Math.round(parseFloat(displayData.soc));
+                        }
+
+                        const socInputDisabled = displayData.state !== 1;
+                        socInput.disabled = socInputDisabled;
+                        setSocButton.disabled = socInputDisabled;
                     });
                 })
                 .catch(error => {
                     console.error('Fehler beim Abrufen der Daten:', error);
-                    const pvBody = document.getElementById('server-status-body');
-                    pvBody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten.</td></tr>';
-                    const wallboxBody = document.getElementById('wallbox-status-body');
-                    wallboxBody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
+                    document.getElementById('server-status-body').innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten.</td></tr>';
+                    document.getElementById('wallbox-status-body').innerHTML = '<tr><td colspan="9" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
                 });
         }
 
@@ -234,8 +259,8 @@
             .then(res => res.json())
             .then(data => {
                 console.log(data.message)
-                // Optional: force an immediate update to reflect the change visually
-                // updateStatus();
+                // Blur the input after setting to allow the value to be updated by the server again
+                input.blur();
             });
         }
 
