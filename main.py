@@ -195,8 +195,8 @@ def simulate_pv_values(datablock, instance_id, host_ip):
 def simulate_wallbox_values(datablock, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und simuliert die Werte
-    einer Wallbox für eine bestimmte Instanz. Die Ladegeschwindigkeit
-    ist an den Tag-Nacht-Zyklus gekoppelt.
+    einer Wallbox. Die Ladeleistung ist konstant, aber die Ladegeschwindigkeit
+    wird durch die globale Simulationsgeschwindigkeit skaliert.
     """
     global wallbox_controls, day_cycle_increment
     print(f"Starte Simulation der Wallbox-Werte für Instanz {instance_id}...")
@@ -207,9 +207,6 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
     charged_energy = 0.0
     fault_code = 0
     fault_timer = 0
-
-    # Zähler für den Tag-Nacht-Zyklus, analog zur PV-Simulation
-    day_cycle_counter = instance_id * 30
 
     while True:
         try:
@@ -240,20 +237,23 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                 print(f"[Wallbox {instance_id}] Fehler injiziert.")
 
             # 2. Simulationslogik basierend auf dem Zustand
-            sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
-
             if state == 2:  # Ladevorgang
-                # Ladeleistung ist jetzt an die Sinuskurve des Tageszyklus gekoppelt
-                max_charging_power = 11000  # 11 kW
-                charging_power = sine_wave * max_charging_power + (random.random() - 0.5) * 50
-                if charging_power < 100:  # Ladeschwelle, um bei "Nacht" nicht zu laden
-                    charging_power = 0
+                # Ladeleistung ist konstant bei ca. 11 kW
+                charging_power = 11000 + (random.random() - 0.5) * 100
 
+                # Berechne die Energie für ein reales Zeitintervall
                 energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
-                charged_energy += energy_this_interval_wh
+
+                # Skaliere die Energie basierend auf der Simulationsgeschwindigkeit
+                base_speed_increment = 0.2  # Basis-Geschwindigkeit der Simulation
+                speed_scaling_factor = day_cycle_increment / base_speed_increment
+                scaled_energy_this_interval_wh = energy_this_interval_wh * speed_scaling_factor
+
+                # Aktualisiere Zähler und SoC mit der skalierten Energie
+                charged_energy += scaled_energy_this_interval_wh
 
                 # Annahme Batteriekapazität 60kWh für SoC-Berechnung
-                soc_increase = (energy_this_interval_wh / 60000.0) * 100
+                soc_increase = (scaled_energy_this_interval_wh / 60000.0) * 100
                 soc += soc_increase
 
                 if soc >= 100:
@@ -292,8 +292,6 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                     "state": state
                 }
 
-            # Zykluszähler für den nächsten Durchlauf erhöhen
-            day_cycle_counter = (day_cycle_counter + day_cycle_increment) % 360
             time.sleep(UPDATE_INTERVAL_SECONDS)
 
         except Exception as e:
