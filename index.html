@@ -105,80 +105,163 @@
         </tbody>
     </table>
 
+    <h2 style="text-align: center; color: #2c3e50; margin-top: 40px;">Wallbox Simulatoren</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Host IP</th>
+                <th>Status</th>
+                <th>Ladeleistung (W)</th>
+                <th>Ladezustand (SoC)</th>
+                <th>Geladene Energie (kWh)</th>
+                <th>Fehlercode</th>
+                <th>Aktion</th>
+                <th>SoC setzen</th>
+            </tr>
+        </thead>
+        <tbody id="wallbox-status-body">
+            <!-- Daten werden hier per JavaScript eingefügt -->
+        </tbody>
+    </table>
+
     <script>
         function updateStatus() {
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
-                    const tbody = document.getElementById('server-status-body');
-                    tbody.innerHTML = ''; // Clear existing table data
-
-                    // Update cycle speed slider and value display
+                    // --- PV-Simulatoren aktualisieren (bleibt wie bisher) ---
+                    const pvBody = document.getElementById('server-status-body');
+                    pvBody.innerHTML = '';
                     const currentSpeed = data.day_cycle_increment;
                     document.getElementById('cycle-speed-slider').value = currentSpeed;
                     updateCycleSpeedDisplay(currentSpeed);
 
                     data.servers.forEach(([instanceId, server]) => {
                         const row = document.createElement('tr');
-                        const defaults = {
-                            status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A",
-                            active_power: "N/A", power_factor: "N/A", frequency: "N/A",
-                            daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0
-                        };
+                        const defaults = { status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A", active_power: "N/A", power_factor: "N/A", frequency: "N/A", daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0 };
                         const displayData = { ...defaults, ...server };
 
                         let statusText = displayData.status;
                         let statusClass = 'status-initializing';
-
                         if (displayData.status === 'Running') {
-                            if (displayData.op_state === 2) {
-                                statusText = 'Einspeisung';
-                                statusClass = 'status-running';
-                            } else if (displayData.op_state === 1) {
-                                statusText = 'Standby';
-                                statusClass = 'status-standby';
-                            }
-                        } else if (displayData.status.startsWith('Fault')) {
-                            statusText = 'Fehler';
-                            statusClass = 'status-fault';
-                        } else if (displayData.status.startsWith('Error')) {
-                            statusText = 'Verbindungsfehler';
-                            statusClass = 'status-error';
+                            if (displayData.op_state === 2) { statusText = 'Einspeisung'; statusClass = 'status-running'; }
+                            else if (displayData.op_state === 1) { statusText = 'Standby'; statusClass = 'status-standby'; }
+                        } else if (displayData.status.startsWith('Fault')) { statusText = 'Fehler'; statusClass = 'status-fault';
+                        } else if (displayData.status.startsWith('Error')) { statusText = 'Verbindungsfehler'; statusClass = 'status-error'; }
+
+                        row.innerHTML = `<td>${instanceId}</td><td>${displayData.host_ip}</td><td class="${statusClass}">${statusText}</td><td>${displayData.temp}</td><td>${displayData.ac_voltage}</td><td>${displayData.ac_current}</td><td>${displayData.active_power}</td><td>${displayData.power_factor}</td><td>${displayData.frequency}</td><td>${displayData.daily_yield}</td><td>${displayData.dc_power}</td><td>${displayData.fault_code}</td><td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>`;
+                        pvBody.appendChild(row);
+                    });
+
+                    // --- Wallbox-Simulatoren aktualisieren (mit granularer DOM-Aktualisierung) ---
+                    const wallboxBody = document.getElementById('wallbox-status-body');
+
+                    data.wallboxes.forEach(([instanceId, wallbox]) => {
+                        const defaults = { status: "Initializing", charging_power: "N/A", soc: "N/A", charged_energy: "N/A", fault_code: "N/A", state: 1 };
+                        const displayData = { ...defaults, ...wallbox };
+
+                        let row = document.getElementById(`wallbox-row-${instanceId}`);
+                        if (!row) {
+                            row = document.createElement('tr');
+                            row.id = `wallbox-row-${instanceId}`;
+                            row.innerHTML = `
+                                <td>${instanceId}</td>
+                                <td class="wb-host-ip"></td>
+                                <td class="wb-status"></td>
+                                <td class="wb-charging-power"></td>
+                                <td class="wb-soc"></td>
+                                <td class="wb-charged-energy"></td>
+                                <td class="wb-fault-code"></td>
+                                <td class="wb-actions"></td>
+                                <td class="wb-set-soc">
+                                    <input type="number" id="soc-input-${instanceId}" min="0" max="100" style="width: 60px;">
+                                    <button onclick="setSoC(${instanceId})">Setzen</button>
+                                </td>
+                            `;
+                            wallboxBody.appendChild(row);
                         }
 
-                        row.innerHTML = `
-                            <td>${instanceId}</td>
-                            <td>${displayData.host_ip}</td>
-                            <td class="${statusClass}">${statusText}</td>
-                            <td>${displayData.temp}</td>
-                            <td>${displayData.ac_voltage}</td>
-                            <td>${displayData.ac_current}</td>
-                            <td>${displayData.active_power}</td>
-                            <td>${displayData.power_factor}</td>
-                            <td>${displayData.frequency}</td>
-                            <td>${displayData.daily_yield}</td>
-                            <td>${displayData.dc_power}</td>
-                            <td>${displayData.fault_code}</td>
-                            <td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>
+                        // Zellen aktualisieren
+                        row.querySelector('.wb-host-ip').textContent = displayData.host_ip;
+                        row.querySelector('.wb-charging-power').textContent = displayData.charging_power;
+                        row.querySelector('.wb-soc').textContent = displayData.soc;
+                        row.querySelector('.wb-charged-energy').textContent = displayData.charged_energy;
+                        row.querySelector('.wb-fault-code').textContent = displayData.fault_code;
+
+                        // Status Zelle (mit Klasse)
+                        const statusCell = row.querySelector('.wb-status');
+                        statusCell.textContent = displayData.status;
+                        statusCell.className = 'wb-status'; // Klassen zurücksetzen
+                        if (displayData.state === 2) statusCell.classList.add('status-running');
+                        else if (displayData.state === 1) statusCell.classList.add('status-standby');
+                        else if (displayData.state === 3) statusCell.classList.add('status-fault');
+
+                        // Aktionen Zelle
+                        const actionCell = row.querySelector('.wb-actions');
+                        const chargeButtonDisabled = displayData.state === 3;
+                        const chargeButtonText = displayData.state === 2 ? 'Laden stoppen' : 'Laden starten';
+                        actionCell.innerHTML = `
+                            <button onclick="toggleCharging(${instanceId}, ${displayData.state})" ${chargeButtonDisabled ? 'disabled' : ''}>${chargeButtonText}</button>
+                            <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
                         `;
-                        tbody.appendChild(row);
+
+                        // SoC-Eingabe Zelle (mit Fokusprüfung)
+                        const socInput = row.querySelector(`#soc-input-${instanceId}`);
+                        const setSocButton = socInput.nextElementSibling;
+
+                        if (document.activeElement !== socInput) {
+                            socInput.value = Math.round(parseFloat(displayData.soc));
+                        }
+
+                        const socInputDisabled = displayData.state !== 1;
+                        socInput.disabled = socInputDisabled;
+                        setSocButton.disabled = socInputDisabled;
                     });
                 })
                 .catch(error => {
                     console.error('Fehler beim Abrufen der Daten:', error);
-                    const tbody = document.getElementById('server-status-body');
-                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten. Läuft der Server?</td></tr>';
+                    document.getElementById('server-status-body').innerHTML = '<tr><td colspan="13" style="text-align:center; color: red;">Fehler beim Laden der Daten.</td></tr>';
+                    document.getElementById('wallbox-status-body').innerHTML = '<tr><td colspan="9" style="text-align:center; color: red;">Läuft der Server?</td></tr>';
                 });
         }
 
         function injectFault(instanceId) {
-            fetch(`/inject_fault/${instanceId}`, { method: 'POST' })
-            .then(response => response.json())
-            .then(data => {
-                console.log(data.message);
-                updateStatus();
+            fetch(`/inject_fault/${instanceId}`, { method: 'POST' }).then(res => res.json()).then(data => console.log(data.message));
+        }
+
+        function toggleCharging(instanceId, state) {
+            const action = state === 2 ? 'stop_charging' : 'start_charging';
+            fetch(`/${action}/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function injectWallboxFault(instanceId) {
+            fetch(`/inject_wallbox_fault/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function setSoC(instanceId) {
+            const input = document.getElementById(`soc-input-${instanceId}`);
+            const socValue = input.value;
+            if (socValue === "" || socValue < 0 || socValue > 100) {
+                alert("Bitte geben Sie einen SoC-Wert zwischen 0 und 100 ein.");
+                return;
+            }
+            fetch(`/set_soc/${instanceId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ soc: socValue })
             })
-            .catch(error => console.error('Fehler bei der Fehlerinjektion:', error));
+            .then(res => res.json())
+            .then(data => {
+                console.log(data.message)
+                // Blur the input after setting to allow the value to be updated by the server again
+                input.blur();
+            });
         }
 
         function updateCycleSpeedDisplay(speed) {

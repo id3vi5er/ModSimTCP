@@ -171,3 +171,57 @@ Hier wird die Anbindung eines der 12 simulierten Wechselrichter beschrieben.
 2.  Klicken Sie auf **Übernehmen**.
 
 Sie sollten nun die Live-Werte für alle konfigurierten Register im Objektbaum von IP-Symcon sehen können.
+
+---
+---
+
+### Schritt 4: Wallbox-Simulation
+
+Zusätzlich zu den PV-Wechselrichtern simuliert das Skript auch **12 Wallboxen** zum Laden von Elektroautos.
+
+*   **IP-Adressen:** `10.10.10.140` bis `10.10.10.151`
+*   **Modbus Port:** `5020` (derselbe wie für die PV-Wechselrichter)
+
+Die Wallboxen erscheinen in einer separaten Tabelle auf der Web-Monitoring-Oberfläche.
+
+#### A. Steuerung über die Weboberfläche
+
+In der Wallbox-Tabelle auf der Weboberfläche finden Sie für jede Wallbox die folgenden Steuerelemente:
+
+*   **Laden starten / stoppen:** Startet oder beendet einen Ladevorgang.
+*   **Fehler erzeugen:** Simuliert einen temporären Fehler der Wallbox.
+*   **SoC setzen:** Hier können Sie einen Start-Ladezustand (in %) für das simulierte Fahrzeug eintragen. Dies funktioniert nur, wenn die Wallbox gerade nicht lädt.
+
+#### B. Anbindung an IP-Symcon
+
+Die Anbindung einer Wallbox an IP-Symcon erfolgt analog zu den PV-Wechselrichtern (siehe Schritt 3), nur dass Sie die IP-Adresse einer Wallbox verwenden (z.B. `10.10.10.140`).
+
+#### C. Wallbox-Register zur Datenabfrage
+
+Hier sind die Modbus-Register, die jede Wallbox zur Verfügung stellt:
+
+*   **Betriebszustand**
+    *   Name: `Wallbox Zustand`
+    *   Adresse: `20`
+    *   Datentyp: `INT16`
+    *   (Werte: 1=Bereit, 2=Ladevorgang, 3=Fehler)
+*   **Ladeleistung**
+    *   Name: `Ladeleistung`
+    *   Adresse: `21`
+    *   Datentyp: `INT16`
+    *   Einheit: `W`
+*   **Ladezustand (SoC)**
+    *   Name: `Ladezustand`
+    *   Adresse: `22`
+    *   Datentyp: `INT16`
+    *   Einheit: `%`
+*   **Geladene Energie (32-Bit)**
+    *   Name: `Geladene Energie`
+    *   Adresse: `23`
+    *   Datentyp: `UINT32 (High Word First)`
+    *   Einheit: `Wh`
+*   **Fehlercode**
+    *   Name: `Wallbox Fehlercode`
+    *   Adresse: `25`
+    *   Datentyp: `INT16`
+    *   (Werte: 0=OK, 201=Ladefehler)

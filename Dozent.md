@@ -57,3 +57,34 @@ Wenn der Betriebszustand `3` (Fehler) ist, gibt dieses Register die Ursache an.
 *   **Zufälligkeit:** Alle Werte enthalten eine leichte zufällige Schwankung, um realistische Messdaten nachzubilden.
 *   **Instanz-Varianz:** Die maximale DC-Stromstärke variiert leicht zwischen den 12 Instanzen, was zu geringfügig unterschiedlichen maximalen Leistungen führt.
 *   **Tagesertrag-Reset:** Der Tagesertrag (`DAILY_YIELD_REGISTER`) wird automatisch um Mitternacht zurückgesetzt.
+
+---
+---
+
+## Wallbox-Simulation: Technische Details
+
+Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen abzubilden.
+
+### Wallbox Modbus Register-Referenz
+
+| Adresse | Register-Name (Code) | Beschreibung | Datentyp | Client Faktor | Einheit | Min. Wert (ca.) | Max. Wert (ca.) |
+|---|---|---|---|---|---|---|---|
+| 20 | `WALLBOX_STATE_REGISTER` | Betriebszustand der Wallbox | `INT16` | `1` | - | 1 | 3 |
+| 21 | `CHARGING_POWER_REGISTER` | Aktuelle Ladeleistung | `INT16` | `1` | W | 0 | ~11050 |
+| 22 | `STATE_OF_CHARGE_REGISTER`| Ladezustand des Fahrzeugs (SoC)| `INT16` | `1` | % | 0 | 100 |
+| 23-24| `CHARGED_ENERGY_REGISTER`| Geladene Energie (Session) | `UINT32`| `1` | Wh | 0 | Kumulativ |
+| 25 | `WALLBOX_FAULT_CODE_REGISTER`| Fehlercode der Wallbox | `INT16` | `1` | - | 0 | 201 |
+
+### Wallbox Betriebszustände (`WALLBOX_STATE_REGISTER`, Adresse 20)
+
+| Wert | Zustand | Beschreibung |
+|---|---|---|
+| `1` | **Bereit** | Die Wallbox ist bereit zum Laden oder hat den Ladevorgang abgeschlossen. Der Start-SoC kann in diesem Zustand über die UI gesetzt werden. |
+| `2` | **Ladevorgang** | Die Wallbox lädt aktiv das Fahrzeug. Die angezeigte Ladeleistung ist konstant bei ~11kW. |
+| `3` | **Fehler** | Ein simulierter Fehler ist aufgetreten (z.B. durch den "Fehler erzeugen"-Button). |
+
+### Hinweise zur Wallbox-Simulation
+
+*   **Konstante Ladeleistung:** Wenn ein Ladevorgang aktiv ist, zeigt das Register `CHARGING_POWER_REGISTER` immer einen Wert von ca. 11 kW an.
+*   **Skalierte Ladegeschwindigkeit:** Die tatsächliche Ladegeschwindigkeit (wie schnell der SoC steigt) ist an die globale **Simulationsgeschwindigkeit** gekoppelt. Ein höherer Faktor auf dem Schieberegler in der UI führt zu einem dramatisch schnelleren Ladevorgang in Echtzeit, obwohl die angezeigte Ladeleistung konstant bleibt. Dies dient dazu, lange Ladevorgänge in kurzer Zeit zu demonstrieren.
+*   **Interaktivität:** Die Simulation ist vollständig über die Weboberfläche steuerbar (Start/Stopp, Fehler, initialer SoC).
