@@ -59,6 +59,7 @@ The simulator provides a comprehensive set of registers for a detailed PV invert
 | 22 | State of Charge | `INT16` | `1` | % | SoC of the connected vehicle |
 | 23-24 | Charged Energy | `UINT32` | `1` | Wh | Energy transferred in this session |
 | 25 | Wallbox Fault Code | `INT16` | `1` | - | Active fault code (0=OK, 201=...) |
+| 26 | Remote Control | `INT16` | `1` | - | Write `1` to start, `2` to stop |
 
 ---
 
