@@ -2,7 +2,8 @@
 
 This script simulates multiple photovoltaic (PV) inverters, each with its own Modbus TCP server instance. It's designed as a data source for home automation systems like IP-Symcon or for testing Modbus client implementations that need to interact with multiple devices.
 
-A specific German-language guide for setup is available here: [Anleitung.md](Anleitung.md)
+A specific German-language guide for setup is available here: [Anleitung.md](Anleitung.md) and here [Dozent.md](Dozent.md)
+A handout file is stored here: [handout.md](handout.md)
 
 ## Features
 
