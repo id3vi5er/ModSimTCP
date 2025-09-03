@@ -1,4 +1,4 @@
-# PV Simulator with Modbus TCP
+# PV and Wallbox Simulator with Modbus TCP
 
 This script simulates multiple photovoltaic (PV) inverters, each with its own Modbus TCP server instance. It's designed as a data source for home automation systems like IP-Symcon or for testing Modbus client implementations that need to interact with multiple devices.
 
