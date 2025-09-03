@@ -74,6 +74,7 @@ CHARGING_POWER_REGISTER = 21     # Ladeleistung in W
 STATE_OF_CHARGE_REGISTER = 22    # SoC in %
 CHARGED_ENERGY_REGISTER = 23     # Geladene Energie (UINT32), Wh
 WALLBOX_FAULT_CODE_REGISTER = 25 # Fehlercode (0=OK, 201=Ladefehler)
+REMOTE_CONTROL_REGISTER = 26     # Fernsteuerung (1=Start, 2=Stop)
 
 
 def split_32bit_value(value):
@@ -210,9 +211,28 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
 
     while True:
         try:
-            # 1. Steuerbefehle aus der UI verarbeiten
-            control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
+            # 1. Steuerbefehle verarbeiten (Modbus hat Vorrang)
+            control_action = None
 
+            # Befehl aus Modbus-Register lesen
+            try:
+                remote_command = datablock.getValues(REMOTE_CONTROL_REGISTER, 1)[0]
+                if remote_command == 1:
+                    control_action = 'start_charging'
+                    print(f"[Wallbox {instance_id}] Start-Befehl via Modbus erhalten.")
+                    datablock.setValues(REMOTE_CONTROL_REGISTER, [0]) # Befehl quittieren
+                elif remote_command == 2:
+                    control_action = 'stop_charging'
+                    print(f"[Wallbox {instance_id}] Stop-Befehl via Modbus erhalten.")
+                    datablock.setValues(REMOTE_CONTROL_REGISTER, [0]) # Befehl quittieren
+            except IndexError:
+                pass # Register noch nicht initialisiert
+
+            # Befehl aus UI verarbeiten, falls kein Modbus-Befehl vorliegt
+            if not control_action:
+                control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
+
+            # Steuerlogik
             if control_action == 'set_soc' and state == 1:
                 try:
                     new_soc = int(wallbox_controls.get(instance_id, {}).pop('value', soc))
@@ -221,7 +241,6 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                         print(f"[Wallbox {instance_id}] SoC auf {soc}% gesetzt.")
                 except (ValueError, TypeError):
                     pass
-
             elif control_action == 'start_charging' and state != 3:
                 state = 2
                 if soc < 20: soc = 20

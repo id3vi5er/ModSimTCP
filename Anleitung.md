@@ -225,3 +225,8 @@ Hier sind die Modbus-Register, die jede Wallbox zur Verfügung stellt:
     *   Adresse: `25`
     *   Datentyp: `INT16`
     *   (Werte: 0=OK, 201=Ladefehler)
+*   **Fernsteuerung (Schreiben)**
+    *   Name: `Fernsteuerung`
+    *   Adresse: `26`
+    *   Datentyp: `INT16`
+    *   **Beschreibung:** Dieses Register dient zur Fernsteuerung. Schreiben Sie eine `1`, um das Laden zu starten, oder eine `2`, um es zu stoppen. Der Simulator setzt den Wert nach Ausführung auf `0` zurück.

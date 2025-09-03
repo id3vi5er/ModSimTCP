@@ -74,6 +74,7 @@ Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen ab
 | 22 | `STATE_OF_CHARGE_REGISTER`| Ladezustand des Fahrzeugs (SoC)| `INT16` | `1` | % | 0 | 100 |
 | 23-24| `CHARGED_ENERGY_REGISTER`| Geladene Energie (Session) | `UINT32`| `1` | Wh | 0 | Kumulativ |
 | 25 | `WALLBOX_FAULT_CODE_REGISTER`| Fehlercode der Wallbox | `INT16` | `1` | - | 0 | 201 |
+| 26 | `REMOTE_CONTROL_REGISTER`| Start/Stop-Befehl schreiben | `INT16` | `1` | - | 0 | 2 |
 
 ### Wallbox Betriebszustände (`WALLBOX_STATE_REGISTER`, Adresse 20)
 
@@ -88,3 +89,4 @@ Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen ab
 *   **Konstante Ladeleistung:** Wenn ein Ladevorgang aktiv ist, zeigt das Register `CHARGING_POWER_REGISTER` immer einen Wert von ca. 11 kW an.
 *   **Skalierte Ladegeschwindigkeit:** Die tatsächliche Ladegeschwindigkeit (wie schnell der SoC steigt) ist an die globale **Simulationsgeschwindigkeit** gekoppelt. Ein höherer Faktor auf dem Schieberegler in der UI führt zu einem dramatisch schnelleren Ladevorgang in Echtzeit, obwohl die angezeigte Ladeleistung konstant bleibt. Dies dient dazu, lange Ladevorgänge in kurzer Zeit zu demonstrieren.
 *   **Interaktivität:** Die Simulation ist vollständig über die Weboberfläche steuerbar (Start/Stopp, Fehler, initialer SoC).
+*   **Fernsteuerung via Modbus:** Zusätzlich zur UI kann die Wallbox über das `REMOTE_CONTROL_REGISTER` (26) gesteuert werden. Ein Client schreibt `1` (Start) oder `2` (Stop). Der Simulator liest diesen Wert, führt die Aktion aus und setzt das Register zur Quittierung auf `0` zurück. Modbus-Befehle haben Vorrang vor UI-Befehlen, falls sie im selben Zyklus auftreten.
