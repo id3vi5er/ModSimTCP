@@ -21,47 +21,47 @@ data_lock = threading.Lock()
 fault_flags = {}
 wallbox_controls = {} # NEU für Wallboxen
 pv_controls = {} # NEU für PV-Steuerung
-day_cycle_increment = 0.2
+day_cycle_increment = 0.1
 
 # --- Konfiguration ---
+PV_PEAK_POWER = 25000  # Maximalleistung der PV-Anlage in Watt
 PV_HOST_IPS = [f"10.10.10.{120 + i}" for i in range(12)]
 WALLBOX_HOST_IPS = [f"10.10.10.{140 + i}" for i in range(12)] # NEU für Wallboxen
 TCP_PORT = 5020
 UPDATE_INTERVAL_SECONDS = 2
 
-# --- PV-Register-Adressen (Holding Registers, beginnend bei 0) ---
-# Hinweis: Die Adressen sind um 1 verschoben gegenüber der üblichen Modbus-Dokumentation
-VOLTAGE_REGISTER = 1          # AC Spannung (U)
-CURRENT_REGISTER = 2          # AC Strom (I)
-APPARENT_POWER_REGISTER = 3   # Scheinleistung (S = U*I), ehemals POWER_REGISTER
+# --- PV-Register-Adressen (3-Phasen-Betrieb) ---
+# Spannungen & Ströme
+VOLTAGE_L1_REGISTER = 1       # AC Spannung Phase 1
+VOLTAGE_L2_REGISTER = 2       # AC Spannung Phase 2
+VOLTAGE_L3_REGISTER = 3       # AC Spannung Phase 3
+CURRENT_L1_REGISTER = 4       # AC Strom Phase 1
+CURRENT_L2_REGISTER = 5       # AC Strom Phase 2
+CURRENT_L3_REGISTER = 6       # AC Strom Phase 3
 
-# NEUE REGISTER
-# Leistungswerte
-ACTIVE_POWER_REGISTER = 4     # Wirkleistung (P = S * cos(phi)), Einheit: W
-POWER_FACTOR_REGISTER = 5     # Leistungsfaktor (cos(phi)), skaliert * 100
-REACTIVE_POWER_REGISTER = 6   # Blindleistung (Q), Einheit: VAR
+# Leistungswerte (Gesamt über alle Phasen)
+ACTIVE_POWER_REGISTER = 7     # Wirkleistung (P)
+REACTIVE_POWER_REGISTER = 8   # Blindleistung (Q)
+APPARENT_POWER_REGISTER = 9   # Scheinleistung (S)
+POWER_FACTOR_REGISTER = 10    # Leistungsfaktor (cos(phi))
 
-# Netzparameter
-FREQUENCY_REGISTER = 7        # Netzfrequenz, skaliert * 100 (z.B. 5001 für 50.01 Hz)
-
-# Energiezähler (32-Bit Werte, belegen je 2 Register)
-DAILY_YIELD_REGISTER_H = 8    # Tagesertrag High Word, Einheit: Wh
-DAILY_YIELD_REGISTER_L = 9    # Tagesertrag Low Word
-TOTAL_YIELD_REGISTER_H = 10   # Gesamtertrag High Word, Einheit: kWh
-TOTAL_YIELD_REGISTER_L = 11   # Gesamtertrag Low Word
-
-# Status und Diagnose
-OPERATING_STATE_REGISTER = 12 # Betriebszustand (0=Aus, 1=Standby, 2=Einspeisung, 3=Fehler)
-DEVICE_TEMP_REGISTER = 13     # Gerätetemperatur, skaliert * 10 (°C)
-FAULT_CODE_REGISTER = 14      # Fehlercode
+# Netz- & Energiewerte
+FREQUENCY_REGISTER = 11       # Netzfrequenz
+DAILY_YIELD_REGISTER_H = 12   # Tagesertrag (Wh) High Word
+DAILY_YIELD_REGISTER_L = 13   # Tagesertrag (Wh) Low Word
+TOTAL_YIELD_REGISTER_H = 14   # Gesamtertrag (kWh) High Word
+TOTAL_YIELD_REGISTER_L = 15   # Gesamtertrag (kWh) Low Word
 
 # DC-Seite
-DC_VOLTAGE_REGISTER = 15      # DC-Spannung, skaliert * 10 (V)
-DC_CURRENT_REGISTER = 16      # DC-Strom, skaliert * 10 (A)
-DC_POWER_REGISTER = 17        # DC-Leistung (P_DC), Einheit: W
+DC_VOLTAGE_REGISTER = 16      # DC-Spannung
+DC_CURRENT_REGISTER = 17      # DC-Strom
+DC_POWER_REGISTER = 18        # DC-Leistung
 
-# NEU: Steuerungsregister
-RESET_REGISTER = 18           # Beschreibbares Register zum Zurücksetzen von Fehlern
+# Status und Diagnose
+OPERATING_STATE_REGISTER = 19 # Betriebszustand
+DEVICE_TEMP_REGISTER = 20     # Gerätetemperatur
+FAULT_CODE_REGISTER = 21      # Fehlercode
+RESET_REGISTER = 22           # Fehler zurücksetzen (Schreiben)
 
 # Skalierungsfaktoren
 VOLTAGE_SCALING = 10.0
@@ -136,66 +136,90 @@ def simulate_pv_values(datablock, instance_id, host_ip):
             # Logik für Fehlerzustand
             if is_in_fault:
                 operating_state, fault_code = 3, 101
-                active_power, apparent_power, reactive_power, ac_current = 0, 0, 0, 0.0
+                active_power, apparent_power, reactive_power = 0, 0, 0
+                ac_current_l1, ac_current_l2, ac_current_l3 = 0.0, 0.0, 0.0
                 dc_power, dc_current = 0, 0.0
-                # Andere Werte beibehalten oder auf sichere Werte setzen
-                ac_voltage = 230.0 + (random.random() - 0.5) * 2
-                frequency = 50.0 + (random.random() - 0.5) * 0.04
-                device_temperature = 25.0 + (random.random() - 0.5)
                 power_factor = 0.0
+                # Spannungen und Frequenz auf Standardwerte setzen
+                ac_voltage_l1, ac_voltage_l2, ac_voltage_l3 = 230.0, 230.0, 230.0
+                frequency = 50.0
+                device_temperature = 25.0 + (random.random() - 0.5)
             else:
                 # Normalbetrieb
                 operating_state, fault_code = 1, 0 # Standard: Standby
 
-                # 1. DC-Seite simulieren
+                # 1. DC-Seite simulieren (angepasst für 25kW Peak)
                 sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
-                dc_voltage = 350.0 + (random.random() - 0.5) * 20
-                max_dc_current = 10.0 + (instance_id % 3 - 1)
+                dc_voltage = 850.0 + (random.random() - 0.5) * 50
+                max_dc_current = PV_PEAK_POWER / dc_voltage
                 dc_current = sine_wave * max_dc_current + (random.random() * 0.05)
                 if dc_current < 0.05: dc_current = 0.0
                 dc_power = dc_voltage * dc_current
 
-                # 2. AC-Werte berechnen
+                # 2. AC-Werte für 3 Phasen berechnen
                 inverter_efficiency = 0.97
-                ac_power_potential = dc_power * inverter_efficiency
-                ac_voltage = 230.0 + (random.random() - 0.5) * 2
-                ac_current = ac_power_potential / ac_voltage if ac_power_potential > 1.0 else 0.0
+                ac_power_potential_total = dc_power * inverter_efficiency
+                power_per_phase = ac_power_potential_total / 3.0
 
-                apparent_power = ac_voltage * ac_current
-                power_factor = 0.98 + (random.random() * 0.02) if apparent_power > 100 else 0.90 + (random.random() * 0.05)
+                # Spannungen leicht unterschiedlich simulieren
+                ac_voltage_l1 = 230.0 + (random.random() - 0.5) * 2
+                ac_voltage_l2 = 230.0 + (random.random() - 0.5) * 2
+                ac_voltage_l3 = 230.0 + (random.random() - 0.5) * 2
+
+                # Ströme pro Phase
+                ac_current_l1 = power_per_phase / ac_voltage_l1 if power_per_phase > 1.0 else 0.0
+                ac_current_l2 = power_per_phase / ac_voltage_l2 if power_per_phase > 1.0 else 0.0
+                ac_current_l3 = power_per_phase / ac_voltage_l3 if power_per_phase > 1.0 else 0.0
+
+                # Leistungen pro Phase und dann summieren
+                apparent_power_l1 = ac_voltage_l1 * ac_current_l1
+                apparent_power_l2 = ac_voltage_l2 * ac_current_l2
+                apparent_power_l3 = ac_voltage_l3 * ac_current_l3
+                apparent_power = apparent_power_l1 + apparent_power_l2 + apparent_power_l3
+
+                power_factor = 0.98 + (random.random() * 0.02) if apparent_power > 100 else 0.95
+
                 active_power = apparent_power * power_factor
                 reactive_power = math.sqrt(apparent_power**2 - active_power**2) if apparent_power > active_power else 0.0
 
                 # 3. Netz- und Statusparameter
                 frequency = 50.0 + (random.random() - 0.5) * 0.04
-                device_temperature = 25.0 + (active_power / 150.0) + (random.random() - 0.5)
+                device_temperature = 25.0 + (active_power / 1500.0) # Skalierung angepasst
 
                 if active_power > 10:
-                    operating_state, fault_code = 2, 0
+                    operating_state = 2
                 else:
-                    operating_state, fault_code = 1, 0
+                    operating_state = 1
 
             # 4. Energiezähler
             energy_this_interval_wh = active_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
             daily_yield_wh += energy_this_interval_wh
             total_yield_kwh += (energy_this_interval_wh / 1000.0)
 
-            # 5. Werte in Register schreiben
-            datablock.setValues(VOLTAGE_REGISTER, [int(ac_voltage * VOLTAGE_SCALING)])
-            datablock.setValues(CURRENT_REGISTER, [int(ac_current * CURRENT_SCALING)])
-            datablock.setValues(APPARENT_POWER_REGISTER, [int(apparent_power)])
+            # 5. Werte in Register schreiben (neue 3-Phasen-Map)
+            datablock.setValues(VOLTAGE_L1_REGISTER, [int(ac_voltage_l1 * VOLTAGE_SCALING)])
+            datablock.setValues(VOLTAGE_L2_REGISTER, [int(ac_voltage_l2 * VOLTAGE_SCALING)])
+            datablock.setValues(VOLTAGE_L3_REGISTER, [int(ac_voltage_l3 * VOLTAGE_SCALING)])
+            datablock.setValues(CURRENT_L1_REGISTER, [int(ac_current_l1 * CURRENT_SCALING)])
+            datablock.setValues(CURRENT_L2_REGISTER, [int(ac_current_l2 * CURRENT_SCALING)])
+            datablock.setValues(CURRENT_L3_REGISTER, [int(ac_current_l3 * CURRENT_SCALING)])
+
             datablock.setValues(ACTIVE_POWER_REGISTER, [int(active_power)])
-            datablock.setValues(POWER_FACTOR_REGISTER, [int(power_factor * POWER_FACTOR_SCALING)])
             datablock.setValues(REACTIVE_POWER_REGISTER, [int(reactive_power)])
+            datablock.setValues(APPARENT_POWER_REGISTER, [int(apparent_power)])
+            datablock.setValues(POWER_FACTOR_REGISTER, [int(power_factor * POWER_FACTOR_SCALING)])
             datablock.setValues(FREQUENCY_REGISTER, [int(frequency * FREQUENCY_SCALING)])
+
             datablock.setValues(DAILY_YIELD_REGISTER_H, split_32bit_value(daily_yield_wh))
             datablock.setValues(TOTAL_YIELD_REGISTER_H, split_32bit_value(total_yield_kwh))
-            datablock.setValues(OPERATING_STATE_REGISTER, [operating_state])
-            datablock.setValues(DEVICE_TEMP_REGISTER, [int(device_temperature * TEMP_SCALING)])
-            datablock.setValues(FAULT_CODE_REGISTER, [fault_code])
+
             datablock.setValues(DC_VOLTAGE_REGISTER, [int(dc_voltage * DC_VOLTAGE_SCALING)])
             datablock.setValues(DC_CURRENT_REGISTER, [int(dc_current * DC_CURRENT_SCALING)])
             datablock.setValues(DC_POWER_REGISTER, [int(dc_power)])
+
+            datablock.setValues(OPERATING_STATE_REGISTER, [operating_state])
+            datablock.setValues(DEVICE_TEMP_REGISTER, [int(device_temperature * TEMP_SCALING)])
+            datablock.setValues(FAULT_CODE_REGISTER, [fault_code])
 
             # 6. Daten für Web-UI aktualisieren
             with data_lock:
@@ -203,8 +227,10 @@ def simulate_pv_values(datablock, instance_id, host_ip):
                 server_data[instance_id] = {
                     "host_ip": host_ip,
                     "status": status_text,
-                    "ac_voltage": f"{ac_voltage:.1f} V",
-                    "ac_current": f"{ac_current:.2f} A",
+                    "ac_voltage_l1": f"{ac_voltage_l1:.1f} V",
+                    "ac_voltage_l2": f"{ac_voltage_l2:.1f} V",
+                    "ac_voltage_l3": f"{ac_voltage_l3:.1f} V",
+                    "ac_current": f"{(ac_current_l1 + ac_current_l2 + ac_current_l3):.2f} A",
                     "active_power": f"{active_power:.0f} W",
                     "power_factor": f"{power_factor:.2f}",
                     "frequency": f"{frequency:.2f} Hz",
@@ -326,9 +352,14 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                 fault_code = 201
                 charging_power = 0
             elif state == 2:  # Ladevorgang
-                charging_power = 11000 + (random.random() - 0.5) * 100
-                energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
-                speed_scaling_factor = day_cycle_increment / 0.2
+                if not is_car_connected:
+                    state = 1  # Stop charging if car is disconnected
+                    print(f"[Wallbox {instance_id}] Ladevorgang gestoppt, da Fahrzeug getrennt wurde.")
+                    charging_power = 0
+                else:
+                    charging_power = 11000 + (random.random() - 0.5) * 100
+                    energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
+                    speed_scaling_factor = day_cycle_increment / 0.2
                 scaled_energy_this_interval_wh = energy_this_interval_wh * speed_scaling_factor
                 charged_energy += scaled_energy_this_interval_wh
                 soc_increase = (scaled_energy_this_interval_wh / 60000.0) * 100

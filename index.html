@@ -89,7 +89,9 @@
                 <th>Host IP</th>
                 <th>Status</th>
                 <th>Temp (°C)</th>
-                <th>AC Spannung (V)</th>
+                <th>Spannung L1 (V)</th>
+                <th>Spannung L2 (V)</th>
+                <th>Spannung L3 (V)</th>
                 <th>AC Strom (A)</th>
                 <th>Wirkleistung (W)</th>
                 <th>Leistungsfaktor</th>
@@ -141,7 +143,13 @@
 
                     data.servers.forEach(([instanceId, server]) => {
                         const row = document.createElement('tr');
-                        const defaults = { status: "Initializing", temp: "N/A", ac_voltage: "N/A", ac_current: "N/A", active_power: "N/A", power_factor: "N/A", frequency: "N/A", daily_yield: "N/A", dc_power: "N/A", fault_code: "N/A", op_state: 0 };
+                        const defaults = {
+                            status: "Initializing", temp: "N/A",
+                            ac_voltage_l1: "N/A", ac_voltage_l2: "N/A", ac_voltage_l3: "N/A",
+                            ac_current: "N/A", active_power: "N/A", power_factor: "N/A",
+                            frequency: "N/A", daily_yield: "N/A", dc_power: "N/A",
+                            fault_code: "N/A", op_state: 0
+                        };
                         const displayData = { ...defaults, ...server };
 
                         let statusText = displayData.status;
@@ -157,7 +165,22 @@
                             actionButtons += ` <button onclick="resetFault('pv', ${instanceId})">Reset</button>`;
                         }
 
-                        row.innerHTML = `<td>${instanceId}</td><td>${displayData.host_ip}</td><td class="${statusClass}">${statusText}</td><td>${displayData.temp}</td><td>${displayData.ac_voltage}</td><td>${displayData.ac_current}</td><td>${displayData.active_power}</td><td>${displayData.power_factor}</td><td>${displayData.frequency}</td><td>${displayData.daily_yield}</td><td>${displayData.dc_power}</td><td>${displayData.fault_code}</td><td>${actionButtons}</td>`;
+                        row.innerHTML = `
+                            <td>${instanceId}</td>
+                            <td>${displayData.host_ip}</td>
+                            <td class="${statusClass}">${statusText}</td>
+                            <td>${displayData.temp}</td>
+                            <td>${displayData.ac_voltage_l1}</td>
+                            <td>${displayData.ac_voltage_l2}</td>
+                            <td>${displayData.ac_voltage_l3}</td>
+                            <td>${displayData.ac_current}</td>
+                            <td>${displayData.active_power}</td>
+                            <td>${displayData.power_factor}</td>
+                            <td>${displayData.frequency}</td>
+                            <td>${displayData.daily_yield}</td>
+                            <td>${displayData.dc_power}</td>
+                            <td>${displayData.fault_code}</td>
+                            <td>${actionButtons}</td>`;
                         pvBody.appendChild(row);
                     });
 
@@ -206,11 +229,16 @@
 
                         // Status Zelle (mit Klasse)
                         const statusCell = row.querySelector('.wb-status');
-                        statusCell.textContent = displayData.status;
                         statusCell.className = 'wb-status'; // Klassen zurücksetzen
-                        if (displayData.state === 2) statusCell.classList.add('status-running');
-                        else if (displayData.state === 1) statusCell.classList.add('status-standby');
-                        else if (displayData.state === 3) statusCell.classList.add('status-fault');
+                        if (displayData.fault_code === 404) {
+                            statusCell.textContent = 'Fehler';
+                            statusCell.classList.add('status-fault');
+                        } else {
+                            statusCell.textContent = displayData.status;
+                            if (displayData.state === 2) statusCell.classList.add('status-running');
+                            else if (displayData.state === 1) statusCell.classList.add('status-standby');
+                            else if (displayData.state === 3) statusCell.classList.add('status-fault');
+                        }
 
                         // Aktionen Zelle
                         const actionCell = row.querySelector('.wb-actions');

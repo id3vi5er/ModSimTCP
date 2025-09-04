@@ -66,112 +66,70 @@ Hier wird die Anbindung eines der 12 simulierten Wechselrichter beschrieben.
 
 ---
 
-**AC-Hauptwerte**
+**Spannungen und Ströme**
 
-*   **Spannung (AC)**
-    *   Name: `AC Spannung`
-    *   Adresse: `1`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.1`
-*   **Strom (AC)**
-    *   Name: `AC Strom`
-    *   Adresse: `2`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.01`
-*   **Scheinleistung**
-    *   Name: `Scheinleistung`
-    *   Adresse: `3`
-    *   Datentyp: `INT16`
-    *   Faktor: `1`
-*   **Wirkleistung**
-    *   Name: `Wirkleistung`
-    *   Adresse: `4`
-    *   Datentyp: `INT16`
-    *   Faktor: `1`
-*   **Leistungsfaktor**
-    *   Name: `Leistungsfaktor`
-    *   Adresse: `5`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.01`
-*   **Blindleistung**
-    *   Name: `Blindleistung`
-    *   Adresse: `6`
-    *   Datentyp: `INT16`
-    *   Faktor: `1`
+*   **Spannung L1**
+    *   Adresse: `1`, Datentyp: `INT16`, Faktor: `0.1`
+*   **Spannung L2**
+    *   Adresse: `2`, Datentyp: `INT16`, Faktor: `0.1`
+*   **Spannung L3**
+    *   Adresse: `3`, Datentyp: `INT16`, Faktor: `0.1`
+*   **Strom L1**
+    *   Adresse: `4`, Datentyp: `INT16`, Faktor: `0.01`
+*   **Strom L2**
+    *   Adresse: `5`, Datentyp: `INT16`, Faktor: `0.01`
+*   **Strom L3**
+    *   Adresse: `6`, Datentyp: `INT16`, Faktor: `0.01`
 
 ---
 
-**Netzparameter**
+**Leistungswerte (Gesamt)**
+
+*   **Wirkleistung**
+    *   Adresse: `7`, Datentyp: `INT16`, Faktor: `1`
+*   **Blindleistung**
+    *   Adresse: `8`, Datentyp: `INT16`, Faktor: `1`
+*   **Scheinleistung**
+    *   Adresse: `9`, Datentyp: `INT16`, Faktor: `1`
+*   **Leistungsfaktor**
+    *   Adresse: `10`, Datentyp: `INT16`, Faktor: `0.01`
+
+---
+
+**Netz- & Energiezähler**
 
 *   **Netzfrequenz**
-    *   Name: `Netzfrequenz`
-    *   Adresse: `7`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.01`
-
----
-
-**Energiezähler (32-Bit)**
-
-*   **Tagesertrag (Wh)**
-    *   Name: `Tagesertrag`
-    *   Adresse: `8`
-    *   Datentyp: `UINT32 (High Word First)`
-    *   Faktor: `1`
-*   **Gesamtertrag (kWh)**
-    *   Name: `Gesamtertrag`
-    *   Adresse: `10`
-    *   Datentyp: `UINT32 (High Word First)`
-    *   Faktor: `1`
-
----
-
-**Status und Diagnose**
-
-*   **Betriebszustand**
-    *   Name: `Betriebszustand`
-    *   Adresse: `12`
-    *   Datentyp: `INT16`
-    *   (Werte: 1=Standby, 2=Einspeisung, 3=Fehler)
-*   **Gerätetemperatur**
-    *   Name: `Gerätetemperatur`
-    *   Adresse: `13`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.1`
-*   **Fehlercode**
-    *   Name: `Fehlercode`
-    *   Adresse: `14`
-    *   Datentyp: `INT16`
+    *   Adresse: `11`, Datentyp: `INT16`, Faktor: `0.01`
+*   **Tagesertrag (Wh, 32-Bit)**
+    *   Adresse: `12`, Datentyp: `UINT32 (High Word First)`
+*   **Gesamtertrag (kWh, 32-Bit)**
+    *   Adresse: `14`, Datentyp: `UINT32 (High Word First)`
 
 ---
 
 **DC-Seite (Gleichstrom)**
 
 *   **DC Spannung**
-    *   Name: `DC Spannung`
-    *   Adresse: `15`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.1`
+    *   Adresse: `16`, Datentyp: `INT16`, Faktor: `0.1`
 *   **DC Strom**
-    *   Name: `DC Strom`
-    *   Adresse: `16`
-    *   Datentyp: `INT16`
-    *   Faktor: `0.01`
+    *   Adresse: `17`, Datentyp: `INT16`, Faktor: `0.01`
 *   **DC Leistung**
-    *   Name: `DC Leistung`
-    *   Adresse: `17`
-    *   Datentyp: `INT16`
-    *   Faktor: `1`
+    *   Adresse: `18`, Datentyp: `INT16`, Faktor: `1`
 
 ---
 
-**Steuerung (Schreiben)**
+**Status und Steuerung**
 
-*   **Fehler zurücksetzen**
-    *   Name: `Fehler Reset`
-    *   Adresse: `18`
-    *   Datentyp: `INT16`
-    *   **Beschreibung:** Um einen Fehler zu quittieren, schreiben Sie eine `1` in dieses Register. Der Simulator setzt den Wert danach auf `0` zurück. **Wichtig:** Ein Fehlerzustand bleibt bestehen, bis er aktiv zurückgesetzt wird.
+*   **Betriebszustand**
+    *   Adresse: `19`
+    *   (Werte: 1=Standby, 2=Einspeisung, 3=Fehler)
+*   **Gerätetemperatur**
+    *   Adresse: `20`, Datentyp: `INT16`, Faktor: `0.1`
+*   **Fehlercode**
+    *   Adresse: `21`, Datentyp: `INT16`
+*   **Fehler zurücksetzen (Schreiben)**
+    *   Adresse: `22`, Datentyp: `INT16`
+    *   **Beschreibung:** Um einen Fehler zu quittieren, schreiben Sie eine `1`.
 
 ---
 
