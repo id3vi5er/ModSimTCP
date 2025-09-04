@@ -20,6 +20,7 @@ data_lock = threading.Lock()
 # Globale Konfiguration für die Simulation
 fault_flags = {}
 wallbox_controls = {} # NEU für Wallboxen
+pv_controls = {} # NEU für PV-Steuerung
 day_cycle_increment = 0.2
 
 # --- Konfiguration ---
@@ -59,6 +60,9 @@ DC_VOLTAGE_REGISTER = 15      # DC-Spannung, skaliert * 10 (V)
 DC_CURRENT_REGISTER = 16      # DC-Strom, skaliert * 10 (A)
 DC_POWER_REGISTER = 17        # DC-Leistung (P_DC), Einheit: W
 
+# NEU: Steuerungsregister
+RESET_REGISTER = 18           # Beschreibbares Register zum Zurücksetzen von Fehlern
+
 # Skalierungsfaktoren
 VOLTAGE_SCALING = 10.0
 CURRENT_SCALING = 100.0
@@ -73,8 +77,10 @@ WALLBOX_STATE_REGISTER = 20      # 1:Bereit, 2:Ladevorgang, 3:Fehler
 CHARGING_POWER_REGISTER = 21     # Ladeleistung in W
 STATE_OF_CHARGE_REGISTER = 22    # SoC in %
 CHARGED_ENERGY_REGISTER = 23     # Geladene Energie (UINT32), Wh
-WALLBOX_FAULT_CODE_REGISTER = 25 # Fehlercode (0=OK, 201=Ladefehler)
-REMOTE_CONTROL_REGISTER = 26     # Fernsteuerung (1=Start, 2=Stop)
+WALLBOX_FAULT_CODE_REGISTER = 25 # Fehlercode (0=OK, 201=Ladefehler, 404=Kein Auto)
+REMOTE_CONTROL_REGISTER = 26     # Fernsteuerung (0=Stop, 1=Start, 2=Verarbeitet)
+CAR_CONNECTED_REGISTER = 27      # Fahrzeug verbunden (0=Nein, 1=Ja)
+WALLBOX_RESET_REGISTER = 28      # Fehler zurücksetzen (1=Reset)
 
 
 def split_32bit_value(value):
@@ -89,21 +95,36 @@ def simulate_pv_values(datablock, instance_id, host_ip):
     Diese Funktion läuft in einem separaten Thread und aktualisiert
     kontinuierlich die Werte im Modbus Datastore für eine bestimmte Instanz.
     """
-    global fault_flags, day_cycle_increment
+    global fault_flags, day_cycle_increment, pv_controls
     print(f"Starte Simulation der PV-Werte für Instanz {instance_id}...")
     
     day_cycle_counter = instance_id * 30
     total_yield_kwh = random.uniform(500, 2000)
     daily_yield_wh = 0.0
     last_reset_day = datetime.date.today().day
-    fault_timer = 0
+    is_in_fault = False
 
     while True:
         try:
-            # Fehlerinjektion prüfen
+            # --- Steuerbefehle verarbeiten ---
+            # 1. Modbus-Reset (höchste Priorität)
+            try:
+                if datablock.getValues(RESET_REGISTER, 1)[0] == 1:
+                    is_in_fault = False
+                    datablock.setValues(RESET_REGISTER, [0]) # Befehl quittieren
+                    print(f"[PV {instance_id}] Fehler via Modbus zurückgesetzt.")
+            except IndexError: pass
+
+            # 2. UI-Befehle (Fehler injizieren, Reset)
+            control_action = pv_controls.get(instance_id, {}).pop('action', None)
+            if control_action == 'reset_fault':
+                is_in_fault = False
+                print(f"[PV {instance_id}] Fehler via UI zurückgesetzt.")
+
+            # Fehlerinjektion (Legacy, könnte auch in pv_controls)
             if fault_flags.get(instance_id):
-                fault_timer = 15  # 15 Zyklen * 2s/Zyklus = 30s Fehler
-                fault_flags[instance_id] = False
+                is_in_fault = True
+                fault_flags[instance_id] = False # Flag zurücksetzen
                 print(f"Manueller Fehler für Instanz {instance_id} injiziert.")
 
             current_day = datetime.date.today().day
@@ -112,36 +133,47 @@ def simulate_pv_values(datablock, instance_id, host_ip):
                 last_reset_day = current_day
                 print(f"[{instance_id}] Tagesertrag zurückgesetzt.")
 
-            # 1. DC-Seite simulieren
-            sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
-            dc_voltage = 350.0 + (random.random() - 0.5) * 20
-            max_dc_current = 10.0 + (instance_id % 3 - 1)
-            dc_current = sine_wave * max_dc_current + (random.random() * 0.05)
-            if dc_current < 0.05: dc_current = 0.0
-            dc_power = dc_voltage * dc_current
-
-            # 2. AC-Werte berechnen
-            inverter_efficiency = 0.97
-            ac_power_potential = dc_power * inverter_efficiency
-            ac_voltage = 230.0 + (random.random() - 0.5) * 2
-            ac_current = ac_power_potential / ac_voltage if ac_power_potential > 1.0 else 0.0
-            
-            apparent_power = ac_voltage * ac_current
-            power_factor = 0.98 + (random.random() * 0.02) if apparent_power > 100 else 0.90 + (random.random() * 0.05)
-            active_power = apparent_power * power_factor
-            reactive_power = math.sqrt(apparent_power**2 - active_power**2) if apparent_power > active_power else 0.0
-
-            # 3. Netz- und Statusparameter
-            frequency = 50.0 + (random.random() - 0.5) * 0.04
-            device_temperature = 25.0 + (active_power / 150.0) + (random.random() - 0.5)
-
-            if fault_timer > 0:
-                operating_state, fault_code, fault_timer = 3, 101, fault_timer - 1
-                active_power = 0 # Im Fehlerfall keine Leistung
-            elif active_power > 10:
-                operating_state, fault_code = 2, 0
+            # Logik für Fehlerzustand
+            if is_in_fault:
+                operating_state, fault_code = 3, 101
+                active_power, apparent_power, reactive_power, ac_current = 0, 0, 0, 0.0
+                dc_power, dc_current = 0, 0.0
+                # Andere Werte beibehalten oder auf sichere Werte setzen
+                ac_voltage = 230.0 + (random.random() - 0.5) * 2
+                frequency = 50.0 + (random.random() - 0.5) * 0.04
+                device_temperature = 25.0 + (random.random() - 0.5)
+                power_factor = 0.0
             else:
-                operating_state, fault_code = 1, 0
+                # Normalbetrieb
+                operating_state, fault_code = 1, 0 # Standard: Standby
+
+                # 1. DC-Seite simulieren
+                sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
+                dc_voltage = 350.0 + (random.random() - 0.5) * 20
+                max_dc_current = 10.0 + (instance_id % 3 - 1)
+                dc_current = sine_wave * max_dc_current + (random.random() * 0.05)
+                if dc_current < 0.05: dc_current = 0.0
+                dc_power = dc_voltage * dc_current
+
+                # 2. AC-Werte berechnen
+                inverter_efficiency = 0.97
+                ac_power_potential = dc_power * inverter_efficiency
+                ac_voltage = 230.0 + (random.random() - 0.5) * 2
+                ac_current = ac_power_potential / ac_voltage if ac_power_potential > 1.0 else 0.0
+
+                apparent_power = ac_voltage * ac_current
+                power_factor = 0.98 + (random.random() * 0.02) if apparent_power > 100 else 0.90 + (random.random() * 0.05)
+                active_power = apparent_power * power_factor
+                reactive_power = math.sqrt(apparent_power**2 - active_power**2) if apparent_power > active_power else 0.0
+
+                # 3. Netz- und Statusparameter
+                frequency = 50.0 + (random.random() - 0.5) * 0.04
+                device_temperature = 25.0 + (active_power / 150.0) + (random.random() - 0.5)
+
+                if active_power > 10:
+                    operating_state, fault_code = 2, 0
+                else:
+                    operating_state, fault_code = 1, 0
 
             # 4. Energiezähler
             energy_this_interval_wh = active_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
@@ -196,8 +228,7 @@ def simulate_pv_values(datablock, instance_id, host_ip):
 def simulate_wallbox_values(datablock, instance_id, host_ip):
     """
     Diese Funktion läuft in einem separaten Thread und simuliert die Werte
-    einer Wallbox. Die Ladeleistung ist konstant, aber die Ladegeschwindigkeit
-    wird durch die globale Simulationsgeschwindigkeit skaliert.
+    einer Wallbox mit erweiterter Logik für Fahrzeugverbindung und Fehlerbehandlung.
     """
     global wallbox_controls, day_cycle_increment
     print(f"Starte Simulation der Wallbox-Werte für Instanz {instance_id}...")
@@ -207,89 +238,110 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
     soc = 0
     charged_energy = 0.0
     fault_code = 0
-    fault_timer = 0
+    is_in_fault = False
+    is_car_connected = False
 
     while True:
         try:
-            # 1. Steuerbefehle verarbeiten (Modbus hat Vorrang)
-            control_action = None
+            # 1. Steuerbefehle und Zustandsänderungen verarbeiten
 
-            # Befehl aus Modbus-Register lesen
+            # Fehler-Reset via Modbus (höchste Priorität)
             try:
-                remote_command = datablock.getValues(REMOTE_CONTROL_REGISTER, 1)[0]
-                if remote_command == 1:
-                    control_action = 'start_charging'
-                    print(f"[Wallbox {instance_id}] Start-Befehl via Modbus erhalten.")
-                    datablock.setValues(REMOTE_CONTROL_REGISTER, [0]) # Befehl quittieren
-                elif remote_command == 2:
-                    control_action = 'stop_charging'
-                    print(f"[Wallbox {instance_id}] Stop-Befehl via Modbus erhalten.")
-                    datablock.setValues(REMOTE_CONTROL_REGISTER, [0]) # Befehl quittieren
-            except IndexError:
-                pass # Register noch nicht initialisiert
+                if datablock.getValues(WALLBOX_RESET_REGISTER, 1)[0] == 1:
+                    is_in_fault = False
+                    fault_code = 0
+                    state = 1 # Zurück zu 'Bereit'
+                    datablock.setValues(WALLBOX_RESET_REGISTER, [0])
+                    print(f"[Wallbox {instance_id}] Fehler via Modbus zurückgesetzt.")
+            except IndexError: pass
 
-            # Befehl aus UI verarbeiten, falls kein Modbus-Befehl vorliegt
-            if not control_action:
-                control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
+            # UI-Befehle (z.B. SOC setzen, Fehler injizieren)
+            control_action = wallbox_controls.get(instance_id, {}).pop('action', None)
 
-            # Steuerlogik
-            if control_action == 'set_soc' and state == 1:
-                try:
-                    new_soc = int(wallbox_controls.get(instance_id, {}).pop('value', soc))
-                    if 0 <= new_soc <= 100:
-                        soc = new_soc
-                        print(f"[Wallbox {instance_id}] SoC auf {soc}% gesetzt.")
-                except (ValueError, TypeError):
-                    pass
-            elif control_action == 'start_charging' and state != 3:
-                state = 2
-                if soc < 20: soc = 20
-                charged_energy = 0.0
-                print(f"[Wallbox {instance_id}] Ladevorgang gestartet.")
+            if control_action == 'start_charging':
+                if is_car_connected and not is_in_fault:
+                    state = 2
+                    if soc < 20: soc = 20
+                    charged_energy = 0.0
+                    fault_code = 0
+                    print(f"[Wallbox {instance_id}] Ladevorgang via UI gestartet.")
+                elif not is_car_connected:
+                    fault_code = 404
+                    print(f"[Wallbox {instance_id}] UI-Ladeversuch ohne Auto (Fehler 404).")
+
             elif control_action == 'stop_charging':
                 state = 1
-                print(f"[Wallbox {instance_id}] Ladevorgang gestoppt.")
+                print(f"[Wallbox {instance_id}] Ladevorgang via UI gestoppt.")
+
+            elif control_action == 'toggle_connection':
+                is_car_connected = not is_car_connected
+                print(f"[Wallbox {instance_id}] Fahrzeugstatus geändert auf: {'Verbunden' if is_car_connected else 'Nicht verbunden'}")
+
             elif control_action == 'inject_fault':
-                state = 3
+                is_in_fault = True
                 fault_code = 201
-                fault_timer = 30
-                print(f"[Wallbox {instance_id}] Fehler injiziert.")
+                state = 3
+                print(f"[Wallbox {instance_id}] Persistenter Fehler injiziert.")
+
+            elif control_action == 'reset_fault':
+                is_in_fault = False
+                fault_code = 0
+                state = 1
+                print(f"[Wallbox {instance_id}] Fehler via UI zurückgesetzt.")
+
+            elif control_action == 'set_soc' and state == 1:
+                try:
+                    new_soc = int(wallbox_controls.get(instance_id, {}).pop('value', soc))
+                    if 0 <= new_soc <= 100: soc = new_soc
+                except (ValueError, TypeError): pass
+
+            # Fernsteuerung via Modbus (REMOTE_CONTROL_REGISTER)
+            try:
+                remote_command = datablock.getValues(REMOTE_CONTROL_REGISTER, 1)[0]
+                if remote_command in [0, 1]:
+                    if remote_command == 1: # START
+                        if is_car_connected and not is_in_fault:
+                            state = 2
+                            if soc < 20: soc = 20
+                            charged_energy = 0.0
+                            fault_code = 0
+                            print(f"[Wallbox {instance_id}] Ladevorgang via Modbus gestartet.")
+                        elif not is_car_connected:
+                            fault_code = 404 # Fehler: Kein Auto verbunden
+                            print(f"[Wallbox {instance_id}] Ladeversuch ohne Auto (Fehler 404).")
+                    elif remote_command == 0: # STOP
+                        state = 1
+                        print(f"[Wallbox {instance_id}] Ladevorgang via Modbus gestoppt.")
+
+                    datablock.setValues(REMOTE_CONTROL_REGISTER, [2]) # Befehl mit 2 quittieren
+            except IndexError: pass
+
+            # Fehler 404 zurücksetzen, wenn Auto wieder verbunden ist
+            if fault_code == 404 and is_car_connected:
+                fault_code = 0
 
             # 2. Simulationslogik basierend auf dem Zustand
-            if state == 2:  # Ladevorgang
-                # Ladeleistung ist konstant bei ca. 11 kW
+            if is_in_fault:
+                state = 3
+                fault_code = 201
+                charging_power = 0
+            elif state == 2:  # Ladevorgang
                 charging_power = 11000 + (random.random() - 0.5) * 100
-
-                # Berechne die Energie für ein reales Zeitintervall
                 energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
-
-                # Skaliere die Energie basierend auf der Simulationsgeschwindigkeit
-                base_speed_increment = 0.2  # Basis-Geschwindigkeit der Simulation
-                speed_scaling_factor = day_cycle_increment / base_speed_increment
+                speed_scaling_factor = day_cycle_increment / 0.2
                 scaled_energy_this_interval_wh = energy_this_interval_wh * speed_scaling_factor
-
-                # Aktualisiere Zähler und SoC mit der skalierten Energie
                 charged_energy += scaled_energy_this_interval_wh
-
-                # Annahme Batteriekapazität 60kWh für SoC-Berechnung
                 soc_increase = (scaled_energy_this_interval_wh / 60000.0) * 100
                 soc += soc_increase
 
                 if soc >= 100:
                     soc = 100
                     state = 1
-                    print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen (SoC 100%).")
-
+                    print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen.")
             elif state == 1:  # Bereit
                 charging_power = 0
-
-            elif state == 3:  # Fehler
+            else: # Fallback
                 charging_power = 0
-                fault_timer -= 1
-                if fault_timer <= 0:
-                    state = 1
-                    fault_code = 0
-                    print(f"[Wallbox {instance_id}] Fehlerzustand beendet.")
 
             # 3. Werte in Register schreiben
             datablock.setValues(WALLBOX_STATE_REGISTER, [state])
@@ -297,6 +349,7 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
             datablock.setValues(STATE_OF_CHARGE_REGISTER, [int(soc)])
             datablock.setValues(CHARGED_ENERGY_REGISTER, split_32bit_value(charged_energy))
             datablock.setValues(WALLBOX_FAULT_CODE_REGISTER, [fault_code])
+            datablock.setValues(CAR_CONNECTED_REGISTER, [1 if is_car_connected else 0])
 
             # 4. Daten für Web-UI aktualisieren
             with data_lock:
@@ -308,7 +361,8 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                     "soc": f"{soc:.1f} %",
                     "charged_energy": f"{charged_energy / 1000.0:.3f} kWh",
                     "fault_code": fault_code,
-                    "state": state
+                    "state": state,
+                    "is_car_connected": is_car_connected
                 }
 
             time.sleep(UPDATE_INTERVAL_SECONDS)
@@ -388,6 +442,25 @@ def inject_fault(instance_id):
     else:
         return jsonify({"status": "error", "message": "Invalid instance ID"}), 404
 
+@app.route('/toggle_car_connection/<int:instance_id>', methods=['POST'])
+def toggle_car_connection(instance_id):
+    if instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'toggle_connection'
+        return jsonify({"status": "success", "message": f"Toggle connection command sent to wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid wallbox ID"}), 404
+
+@app.route('/reset_fault/<string:sim_type>/<int:instance_id>', methods=['POST'])
+def reset_fault(sim_type, instance_id):
+    """Sendet einen Reset-Befehl an die entsprechende Simulationsinstanz."""
+    if sim_type == 'pv' and instance_id in pv_controls:
+        pv_controls[instance_id]['action'] = 'reset_fault'
+        return jsonify({"status": "success", "message": f"Reset command sent to PV {instance_id}"})
+    elif sim_type == 'wallbox' and instance_id in wallbox_controls:
+        wallbox_controls[instance_id]['action'] = 'reset_fault'
+        return jsonify({"status": "success", "message": f"Reset command sent to Wallbox {instance_id}"})
+    return jsonify({"status": "error", "message": "Invalid simulator ID"}), 404
+
+
 @app.route('/set_cycle_speed', methods=['POST'])
 def set_cycle_speed():
     global day_cycle_increment
@@ -443,10 +516,11 @@ def main():
     """
     Hauptfunktion: Initialisiert und startet mehrere Modbus Server Instanzen und das Web-UI.
     """
-    global fault_flags, wallbox_controls
+    global fault_flags, wallbox_controls, pv_controls
     # Initialisierung für PV-Wechselrichter
     for i in range(len(PV_HOST_IPS)):
         fault_flags[i + 1] = False
+        pv_controls[i + 1] = {}
     # Initialisierung für Wallboxen
     for i in range(len(WALLBOX_HOST_IPS)):
         wallbox_controls[i + 1] = {}

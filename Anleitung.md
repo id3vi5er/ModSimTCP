@@ -165,6 +165,16 @@ Hier wird die Anbindung eines der 12 simulierten Wechselrichter beschrieben.
 
 ---
 
+**Steuerung (Schreiben)**
+
+*   **Fehler zurücksetzen**
+    *   Name: `Fehler Reset`
+    *   Adresse: `18`
+    *   Datentyp: `INT16`
+    *   **Beschreibung:** Um einen Fehler zu quittieren, schreiben Sie eine `1` in dieses Register. Der Simulator setzt den Wert danach auf `0` zurück. **Wichtig:** Ein Fehlerzustand bleibt bestehen, bis er aktiv zurückgesetzt wird.
+
+---
+
 #### D. Abschluss der Konfiguration
 
 1.  Aktivieren Sie für jeden Eintrag die Checkbox **Aktiv**, damit eine Variable in IP-Symcon erstellt wird.
@@ -188,8 +198,9 @@ Die Wallboxen erscheinen in einer separaten Tabelle auf der Web-Monitoring-Oberf
 
 In der Wallbox-Tabelle auf der Weboberfläche finden Sie für jede Wallbox die folgenden Steuerelemente:
 
-*   **Laden starten / stoppen:** Startet oder beendet einen Ladevorgang.
-*   **Fehler erzeugen:** Simuliert einen temporären Fehler der Wallbox.
+*   **Verbinden / Trennen:** Simuliert das An- und Abstecken eines Elektroautos.
+*   **Laden starten / stoppen:** Startet oder beendet einen Ladevorgang. Ein Ladevorgang kann nur gestartet werden, wenn ein Fahrzeug verbunden ist.
+*   **Fehler erzeugen:** Simuliert einen Fehler der Wallbox. Dieser Fehler ist **persistent** und muss über den "Reset"-Button zurückgesetzt werden.
 *   **SoC setzen:** Hier können Sie einen Start-Ladezustand (in %) für das simulierte Fahrzeug eintragen. Dies funktioniert nur, wenn die Wallbox gerade nicht lädt.
 
 #### B. Anbindung an IP-Symcon
@@ -224,9 +235,24 @@ Hier sind die Modbus-Register, die jede Wallbox zur Verfügung stellt:
     *   Name: `Wallbox Fehlercode`
     *   Adresse: `25`
     *   Datentyp: `INT16`
-    *   (Werte: 0=OK, 201=Ladefehler)
-*   **Fernsteuerung (Schreiben)**
+    *   (Werte: 0=OK, 201=Ladefehler, 404=Kein Auto verbunden)
+*   **Fahrzeug verbunden (Lesen)**
+    *   Name: `Fahrzeug verbunden`
+    *   Adresse: `27`
+    *   Datentyp: `INT16`
+    *   (Werte: 0=Nein, 1=Ja)
+
+---
+
+**Steuerung (Schreiben)**
+
+*   **Fernsteuerung**
     *   Name: `Fernsteuerung`
     *   Adresse: `26`
     *   Datentyp: `INT16`
-    *   **Beschreibung:** Dieses Register dient zur Fernsteuerung. Schreiben Sie eine `1`, um das Laden zu starten, oder eine `2`, um es zu stoppen. Der Simulator setzt den Wert nach Ausführung auf `0` zurück.
+    *   **Beschreibung:** Schreiben Sie eine `1` zum Starten oder `0` zum Stoppen des Ladevorgangs. Der Start funktioniert nur, wenn ein Fahrzeug verbunden ist. Der Simulator quittiert den Befehl, indem er eine `2` zurückschreibt.
+*   **Fehler zurücksetzen**
+    *   Name: `Fehler Reset`
+    *   Adresse: `28`
+    *   Datentyp: `INT16`
+    *   **Beschreibung:** Um einen Fehler (Zustand 3) zu quittieren, schreiben Sie eine `1` in dieses Register.

@@ -25,6 +25,7 @@ Die folgende Tabelle listet alle Holding-Register auf, die von jeder Simulator-I
 | 15 | `DC_VOLTAGE_REGISTER` | DC Eingangsspannung | `INT16` | `0.1` | V | 340.0 | 360.0 |
 | 16 | `DC_CURRENT_REGISTER` | DC Eingangsstrom | `INT16` | `0.01` | A | 0.0 | ~11.0 |
 | 17 | `DC_POWER_REGISTER` | DC Eingangsleistung | `INT16` | `1` | W | 0 | ~4000 |
+| 18 | `RESET_REGISTER` | Fehler zurücksetzen | `INT16` | `1` | - | *Write-Only* | *Write-Only* |
 
 ---
 
@@ -47,7 +48,7 @@ Wenn der Betriebszustand `3` (Fehler) ist, gibt dieses Register die Ursache an.
 | Wert | Fehler | Beschreibung |
 |---|---|---|
 | `0` | **Kein Fehler** | Normalbetrieb. |
-| `101` | **Simulierter Fehler** | Ein zufällig ausgelöster, temporärer Fehler. Das System setzt sich nach kurzer Zeit (einige Update-Zyklen) automatisch zurück. Dient zum Testen der Fehlererkennung im Client. |
+| `101` | **Simulierter Fehler** | Ein manuell ausgelöster Fehler. Der Zustand ist **persistent** und muss durch Schreiben einer `1` auf `RESET_REGISTER` (18) oder über die UI zurückgesetzt werden. |
 
 ---
 
@@ -63,7 +64,7 @@ Wenn der Betriebszustand `3` (Fehler) ist, gibt dieses Register die Ursache an.
 
 ## Wallbox-Simulation: Technische Details
 
-Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen abzubilden.
+Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen abzubilden, inklusive Fahrzeugerkennung und persistenter Fehler.
 
 ### Wallbox Modbus Register-Referenz
 
@@ -73,20 +74,34 @@ Die Wallbox-Simulation wurde hinzugefügt, um das Laden von Elektrofahrzeugen ab
 | 21 | `CHARGING_POWER_REGISTER` | Aktuelle Ladeleistung | `INT16` | `1` | W | 0 | ~11050 |
 | 22 | `STATE_OF_CHARGE_REGISTER`| Ladezustand des Fahrzeugs (SoC)| `INT16` | `1` | % | 0 | 100 |
 | 23-24| `CHARGED_ENERGY_REGISTER`| Geladene Energie (Session) | `UINT32`| `1` | Wh | 0 | Kumulativ |
-| 25 | `WALLBOX_FAULT_CODE_REGISTER`| Fehlercode der Wallbox | `INT16` | `1` | - | 0 | 201 |
-| 26 | `REMOTE_CONTROL_REGISTER`| Start/Stop-Befehl schreiben | `INT16` | `1` | - | 0 | 2 |
+| 25 | `WALLBOX_FAULT_CODE_REGISTER`| Fehlercode der Wallbox | `INT16` | `1` | - | 0 | 404 |
+| 26 | `REMOTE_CONTROL_REGISTER`| Start/Stop-Befehl schreiben | `INT16` | `1` | - | *Write-Only* | *Write-Only* |
+| 27 | `CAR_CONNECTED_REGISTER` | Fahrzeug verbunden? | `INT16` | `1` | - | 0 | 1 |
+| 28 | `WALLBOX_RESET_REGISTER` | Fehler zurücksetzen | `INT16` | `1` | - | *Write-Only* | *Write-Only* |
 
 ### Wallbox Betriebszustände (`WALLBOX_STATE_REGISTER`, Adresse 20)
 
 | Wert | Zustand | Beschreibung |
 |---|---|---|
 | `1` | **Bereit** | Die Wallbox ist bereit zum Laden oder hat den Ladevorgang abgeschlossen. Der Start-SoC kann in diesem Zustand über die UI gesetzt werden. |
-| `2` | **Ladevorgang** | Die Wallbox lädt aktiv das Fahrzeug. Die angezeigte Ladeleistung ist konstant bei ~11kW. |
-| `3` | **Fehler** | Ein simulierter Fehler ist aufgetreten (z.B. durch den "Fehler erzeugen"-Button). |
+| `2` | **Ladevorgang** | Die Wallbox lädt aktiv das Fahrzeug. Dies ist nur möglich, wenn `CAR_CONNECTED_REGISTER` auf 1 steht. |
+| `3` | **Fehler** | Ein simulierter Fehler ist aufgetreten. Dieser Zustand ist **persistent** und muss zurückgesetzt werden. |
+
+### Fehlercodes (`WALLBOX_FAULT_CODE_REGISTER`, Adresse 25)
+
+| Wert | Fehler | Beschreibung |
+|---|---|---|
+| `0` | **Kein Fehler** | Normalbetrieb. |
+| `201`| **Ladefehler** | Allgemeiner, persistenter Fehler, der durch die UI ausgelöst wurde. |
+| `404`| **Kein Fahrzeug** | Temporärer Fehler, der signalisiert, dass ein Lade-Startbefehl empfangen wurde, aber `CAR_CONNECTED_REGISTER` auf `0` stand. |
 
 ### Hinweise zur Wallbox-Simulation
 
+*   **Fahrzeugverbindung:** Ein Ladevorgang kann nur gestartet werden (via UI oder Modbus), wenn ein Fahrzeug verbunden ist (`CAR_CONNECTED_REGISTER` = 1). Der Verbindungsstatus kann über die UI umgeschaltet werden.
+*   **Fernsteuerung via Modbus:** Das `REMOTE_CONTROL_REGISTER` (26) wird wie folgt verwendet:
+    *   Client schreibt `1` um den Ladevorgang zu **starten**.
+    *   Client schreibt `0` um den Ladevorgang zu **stoppen**.
+    *   Der Server bestätigt die Verarbeitung des Befehls, indem er eine `2` in das Register zurückschreibt.
+*   **Persistente Fehler:** Der Fehlerzustand (`state`=3, `fault_code`=201) bleibt bestehen, bis er aktiv über `WALLBOX_RESET_REGISTER` (28) oder die UI zurückgesetzt wird.
 *   **Konstante Ladeleistung:** Wenn ein Ladevorgang aktiv ist, zeigt das Register `CHARGING_POWER_REGISTER` immer einen Wert von ca. 11 kW an.
-*   **Skalierte Ladegeschwindigkeit:** Die tatsächliche Ladegeschwindigkeit (wie schnell der SoC steigt) ist an die globale **Simulationsgeschwindigkeit** gekoppelt. Ein höherer Faktor auf dem Schieberegler in der UI führt zu einem dramatisch schnelleren Ladevorgang in Echtzeit, obwohl die angezeigte Ladeleistung konstant bleibt. Dies dient dazu, lange Ladevorgänge in kurzer Zeit zu demonstrieren.
-*   **Interaktivität:** Die Simulation ist vollständig über die Weboberfläche steuerbar (Start/Stopp, Fehler, initialer SoC).
-*   **Fernsteuerung via Modbus:** Zusätzlich zur UI kann die Wallbox über das `REMOTE_CONTROL_REGISTER` (26) gesteuert werden. Ein Client schreibt `1` (Start) oder `2` (Stop). Der Simulator liest diesen Wert, führt die Aktion aus und setzt das Register zur Quittierung auf `0` zurück. Modbus-Befehle haben Vorrang vor UI-Befehlen, falls sie im selben Zyklus auftreten.
+*   **Skalierte Ladegeschwindigkeit:** Die tatsächliche Ladegeschwindigkeit (wie schnell der SoC steigt) ist an die globale **Simulationsgeschwindigkeit** gekoppelt. Dies dient dazu, lange Ladevorgänge in kurzer Zeit zu demonstrieren.

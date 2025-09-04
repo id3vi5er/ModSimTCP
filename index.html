@@ -113,6 +113,7 @@
                 <th>ID</th>
                 <th>Host IP</th>
                 <th>Status</th>
+                <th>Fahrzeug</th>
                 <th>Ladeleistung (W)</th>
                 <th>Ladezustand (SoC)</th>
                 <th>Geladene Energie (kWh)</th>
@@ -151,7 +152,12 @@
                         } else if (displayData.status.startsWith('Fault')) { statusText = 'Fehler'; statusClass = 'status-fault';
                         } else if (displayData.status.startsWith('Error')) { statusText = 'Verbindungsfehler'; statusClass = 'status-error'; }
 
-                        row.innerHTML = `<td>${instanceId}</td><td>${displayData.host_ip}</td><td class="${statusClass}">${statusText}</td><td>${displayData.temp}</td><td>${displayData.ac_voltage}</td><td>${displayData.ac_current}</td><td>${displayData.active_power}</td><td>${displayData.power_factor}</td><td>${displayData.frequency}</td><td>${displayData.daily_yield}</td><td>${displayData.dc_power}</td><td>${displayData.fault_code}</td><td><button onclick="injectFault(${instanceId})">Fehler erzeugen</button></td>`;
+                        let actionButtons = `<button onclick="injectFault(${instanceId})">Fehler erzeugen</button>`;
+                        if (displayData.op_state === 3) {
+                            actionButtons += ` <button onclick="resetFault('pv', ${instanceId})">Reset</button>`;
+                        }
+
+                        row.innerHTML = `<td>${instanceId}</td><td>${displayData.host_ip}</td><td class="${statusClass}">${statusText}</td><td>${displayData.temp}</td><td>${displayData.ac_voltage}</td><td>${displayData.ac_current}</td><td>${displayData.active_power}</td><td>${displayData.power_factor}</td><td>${displayData.frequency}</td><td>${displayData.daily_yield}</td><td>${displayData.dc_power}</td><td>${displayData.fault_code}</td><td>${actionButtons}</td>`;
                         pvBody.appendChild(row);
                     });
 
@@ -159,7 +165,7 @@
                     const wallboxBody = document.getElementById('wallbox-status-body');
 
                     data.wallboxes.forEach(([instanceId, wallbox]) => {
-                        const defaults = { status: "Initializing", charging_power: "N/A", soc: "N/A", charged_energy: "N/A", fault_code: "N/A", state: 1 };
+                        const defaults = { status: "Initializing", charging_power: "N/A", soc: "N/A", charged_energy: "N/A", fault_code: "N/A", state: 1, is_car_connected: false };
                         const displayData = { ...defaults, ...wallbox };
 
                         let row = document.getElementById(`wallbox-row-${instanceId}`);
@@ -170,6 +176,7 @@
                                 <td>${instanceId}</td>
                                 <td class="wb-host-ip"></td>
                                 <td class="wb-status"></td>
+                                <td class="wb-car-status"></td>
                                 <td class="wb-charging-power"></td>
                                 <td class="wb-soc"></td>
                                 <td class="wb-charged-energy"></td>
@@ -190,6 +197,13 @@
                         row.querySelector('.wb-charged-energy').textContent = displayData.charged_energy;
                         row.querySelector('.wb-fault-code').textContent = displayData.fault_code;
 
+                        // Fahrzeugstatus
+                        const carStatusCell = row.querySelector('.wb-car-status');
+                        carStatusCell.textContent = displayData.is_car_connected ? 'Verbunden' : 'Nicht verbunden';
+                        carStatusCell.style.fontWeight = displayData.is_car_connected ? 'bold' : 'normal';
+                        carStatusCell.style.color = displayData.is_car_connected ? '#27ae60' : '#7f8c8d';
+
+
                         // Status Zelle (mit Klasse)
                         const statusCell = row.querySelector('.wb-status');
                         statusCell.textContent = displayData.status;
@@ -200,12 +214,20 @@
 
                         // Aktionen Zelle
                         const actionCell = row.querySelector('.wb-actions');
-                        const chargeButtonDisabled = displayData.state === 3;
-                        const chargeButtonText = displayData.state === 2 ? 'Laden stoppen' : 'Laden starten';
-                        actionCell.innerHTML = `
-                            <button onclick="toggleCharging(${instanceId}, ${displayData.state})" ${chargeButtonDisabled ? 'disabled' : ''}>${chargeButtonText}</button>
+                        const startButtonDisabled = !displayData.is_car_connected || displayData.state === 2 || displayData.state === 3;
+                        const stopButtonDisabled = displayData.state !== 2;
+
+                        let actionButtonsHTML = `
+                            <button onclick="startCharging(${instanceId})" ${startButtonDisabled ? 'disabled' : ''}>Laden starten</button>
+                            <button onclick="stopCharging(${instanceId})" ${stopButtonDisabled ? 'disabled' : ''}>Laden stoppen</button>
+                            <button onclick="toggleCarConnection(${instanceId})">${displayData.is_car_connected ? 'Trennen' : 'Verbinden'}</button>
                             <button onclick="injectWallboxFault(${instanceId})">Fehler erzeugen</button>
                         `;
+                        if (displayData.state === 3) {
+                            actionButtonsHTML += ` <button onclick="resetFault('wallbox', ${instanceId})">Reset</button>`;
+                        }
+                        actionCell.innerHTML = actionButtonsHTML;
+
 
                         // SoC-Eingabe Zelle (mit Fokusprüfung)
                         const socInput = row.querySelector(`#soc-input-${instanceId}`);
@@ -231,9 +253,26 @@
             fetch(`/inject_fault/${instanceId}`, { method: 'POST' }).then(res => res.json()).then(data => console.log(data.message));
         }
 
-        function toggleCharging(instanceId, state) {
-            const action = state === 2 ? 'stop_charging' : 'start_charging';
-            fetch(`/${action}/${instanceId}`, { method: 'POST' })
+        function resetFault(sim_type, instanceId) {
+            fetch(`/reset_fault/${sim_type}/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function toggleCarConnection(instanceId) {
+            fetch(`/toggle_car_connection/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function startCharging(instanceId) {
+            fetch(`/start_charging/${instanceId}`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => console.log(data.message));
+        }
+
+        function stopCharging(instanceId) {
+            fetch(`/stop_charging/${instanceId}`, { method: 'POST' })
                 .then(res => res.json())
                 .then(data => console.log(data.message));
         }

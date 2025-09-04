@@ -48,8 +48,11 @@ The simulator provides a comprehensive set of registers for a detailed PV invert
 | 15 | DC Voltage | `INT16` | `0.1` | V | DC Input Voltage |
 | 16 | DC Current | `INT16` | `0.01` | A | DC Input Current |
 | 17 | DC Power | `INT16` | `1` | W | DC Input Power (P_DC) |
+| 18 | Reset Fault | `INT16` | `1` | - | **Write `1` to reset a fault** |
 
 **Note on 32-bit Registers:** `Daily Yield` and `Total Yield` are 32-bit unsigned integers (`UINT32`) that span two 16-bit Modbus registers. When reading, you must query both registers (e.g., starting at address 8 for a length of 2). The server stores values in **High Word First** order.
+
+**Note on Faults:** A fault state (`Operating State` = 3) is now **persistent**. It must be cleared by writing a `1` to the `Reset Fault` register (18) or by using the "Reset" button in the web UI.
 
 ### Wallbox Registers (per instance)
 
@@ -59,8 +62,15 @@ The simulator provides a comprehensive set of registers for a detailed PV invert
 | 21 | Charging Power | `INT16` | `1` | W | Current charging power |
 | 22 | State of Charge | `INT16` | `1` | % | SoC of the connected vehicle |
 | 23-24 | Charged Energy | `UINT32` | `1` | Wh | Energy transferred in this session |
-| 25 | Wallbox Fault Code | `INT16` | `1` | - | Active fault code (0=OK, 201=...) |
-| 26 | Remote Control | `INT16` | `1` | - | Write `1` to start, `2` to stop |
+| 25 | Wallbox Fault Code | `INT16` | `1` | - | `0`:OK, `201`:Charge Fault, `404`:No Car |
+| 26 | Remote Control | `INT16` | `1` | - | Write `1`=Start, `0`=Stop. Reads `2`=OK. |
+| 27 | Car Connected | `INT16` | `1` | - | `0`:No, `1`:Yes (Read-Only via Modbus) |
+| 28 | Reset Fault | `INT16` | `1` | - | **Write `1` to reset a fault** |
+
+**Note on Wallbox Control:**
+*   A car must be connected (`Car Connected` = 1) before charging can start. Attempting to start without a car will result in fault code 404.
+*   The `Remote Control` register is used for starting/stopping. A client writes `1` (Start) or `0` (Stop). The server confirms by writing back `2`.
+*   Faults are persistent and must be cleared via the `Reset Fault` register (28).
 
 ---
 
