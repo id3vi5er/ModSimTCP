@@ -150,10 +150,19 @@ def simulate_pv_values(datablock, instance_id, host_ip):
 
                 # 1. DC-Seite simulieren (angepasst für 25kW Peak)
                 sine_wave = (math.sin(math.radians(day_cycle_counter)) + 1) / 2
-                dc_voltage = 850.0 + (random.random() - 0.5) * 50
-                max_dc_current = PV_PEAK_POWER / dc_voltage
+
+                # BUG 2 FIX: DC Spannung soll Sinusförmig sein (0V Nacht, 800V Tag)
+                # Apply sine wave to voltage. Peak is 800V as requested.
+                dc_voltage = sine_wave * (800.0 + (random.random() - 0.5) * 20)
+                if dc_voltage < 0: dc_voltage = 0
+
+                # To keep power realistic, current must also be sinusoidal.
+                # This makes power proportional to sine^2, which is a reasonable model.
+                # We calculate max current based on peak power and peak voltage.
+                max_dc_current = PV_PEAK_POWER / 800.0 if 800.0 > 0 else 0
                 dc_current = sine_wave * max_dc_current + (random.random() * 0.05)
                 if dc_current < 0.05: dc_current = 0.0
+
                 dc_power = dc_voltage * dc_current
 
                 # 2. AC-Werte für 3 Phasen berechnen
@@ -359,16 +368,23 @@ def simulate_wallbox_values(datablock, instance_id, host_ip):
                 else:
                     charging_power = 11000 + (random.random() - 0.5) * 100
                     energy_this_interval_wh = charging_power * (UPDATE_INTERVAL_SECONDS / 3600.0)
-                    speed_scaling_factor = day_cycle_increment / 0.2
-                scaled_energy_this_interval_wh = energy_this_interval_wh * speed_scaling_factor
-                charged_energy += scaled_energy_this_interval_wh
-                soc_increase = (scaled_energy_this_interval_wh / 60000.0) * 100
-                soc += soc_increase
 
-                if soc >= 100:
-                    soc = 100
-                    state = 1
-                    print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen.")
+                    # FIX: The charging time should be realistic within the simulation's time scale.
+                    # The simulation runs faster than real-time. We need to scale the energy added per interval accordingly.
+                    # Simulation speedup factor = (real seconds in 24h) / (real seconds for one simulation day)
+                    # Real seconds for one simulation day = (360 degrees / increment_per_update) * seconds_per_update
+                    # Simplified formula: 120 * day_cycle_increment
+                    simulation_speedup = (24 * 3600) / ((360 / day_cycle_increment) * UPDATE_INTERVAL_SECONDS)
+
+                    scaled_energy_this_interval_wh = energy_this_interval_wh * simulation_speedup
+                    charged_energy += scaled_energy_this_interval_wh
+                    soc_increase = (scaled_energy_this_interval_wh / 60000.0) * 100  # 60kWh battery
+                    soc += soc_increase
+
+                    if soc >= 100:
+                        soc = 100
+                        state = 1
+                        print(f"[Wallbox {instance_id}] Ladevorgang abgeschlossen.")
             elif state == 1:  # Bereit
                 charging_power = 0
             else: # Fallback
